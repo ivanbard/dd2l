@@ -1,18 +1,18 @@
 # Brightspace data discovery
 
-Research date: October 28, 2026, America/New_York. Initial scope: the user's own student account at Queen's onQ, `https://onq.queensu.ca`.
+Research started October 28, 2026; updated October 29, 2026, America/New_York. Initial scope: the user's own student account at Queen's onQ, `https://onq.queensu.ca`.
 
 ## What we know so far
 
 Brightspace has documented interfaces for most of the information needed for a useful student companion. The installed Brightspace MCP connector offers a substantial reference implementation. Following the user's direction, the application will own a direct connector rather than depend on MCP tool calls. See [the direct connector design](direct-connector.md).
 
-However, **no authenticated course data has been verified yet**. Two course-list attempts failed during automatic sign-in. A direct, unauthenticated request to onQ's API version endpoint succeeded with HTTP 200. This establishes that the site is reachable from the shell and advertises APIs; it does not establish that the connector can connect, that authentication works, or that any student endpoint is permitted.
+**The direct connector now has verified authenticated access.** It retrieved 45 enrollments and representative course data, reused a protected session, and renewed its API token. See [live findings and remaining gaps](live-audit.md). The earlier MCP-based course-list attempts failed during sign-in; those failures did not establish an account permission limit.
 
 The useful ceiling is the intersection of what the platform exposes, what the school enables, what this account may access, what instructors release, and what our chosen integration actually supports. A connector's missing feature is not proof that Brightspace lacks an API. A documented endpoint is not proof a student can call it.
 
 ## Capability map
 
-Every account-access result below is currently **untested because authentication has not succeeded**. “Connector” describes advertised tool behavior, not a successful live read. Availability and field coverage must be measured per course.
+This map records the initial research and advertised MCP capabilities; it is broader than the implemented direct audit. “Connector” in this table refers to the reference MCP tools. The separate [live findings](live-audit.md) record measured direct access. Availability and field coverage must still be measured per course.
 
 | Area | Information worth collecting | Existing connector path | Important limits / next check |
 | --- | --- | --- | --- |
@@ -83,7 +83,7 @@ These route templates were checked against D2L's current reference, not exercise
 | Own sections | `/d2l/api/lp/{version}/{orgUnitId}/sections/mysections/` |
 | Bookmarks | `/d2l/api/le/{version}/{orgUnitId}/content/bookmarks` |
 
-## Evidence collected this session
+## Initial research evidence (October 28)
 
 | Check | Result | Meaning |
 | --- | --- | --- |
@@ -93,7 +93,7 @@ These route templates were checked against D2L's current reference, not exercise
 | Direct HTTPS `GET https://onq.queensu.ca/d2l/api/versions/` | HTTP 200; advertised `le` latest `1.100`, `lp` latest `1.64` | Shell can reach the public API. This says nothing about student permissions or OAuth registration. |
 | D2L documentation | Reference, OAuth, core calls, content, enrollment, assignment, grade, quiz, discussion, news, calendar, group and export pages retrieved | Capability research is based on current official documentation. |
 
-Interactive connector sign-in subsequently failed to complete. The connector recommended `npx -y brightspace-mcp-server@latest auth` from the home directory. That diagnostic launched version `5.1.27` and announced browser-based authentication, but produced no further result while observed; it was cancelled. No authenticated-data claim can be made. Do not infer a bad password or a permission denial from this startup failure. The next required input is a successful interactive sign-in on this computer, after which the existing connector can run the audit above.
+Interactive MCP sign-in subsequently failed to complete. The server recommended `npx -y brightspace-mcp-server@latest auth` from the home directory. That diagnostic launched version `5.1.27` and announced browser-based authentication, but produced no further result while observed; it was cancelled. Do not infer a bad password or a permission denial from that startup failure. On October 29, the application-owned connector successfully established its own session and ran the direct audit described in the live findings.
 
 Validation: all 15 authenticated GET route templates in this report were compared programmatically with the current official route signatures and matched. The README's local report target exists. This validates the research artifact, not account access.
 

@@ -1,6 +1,6 @@
 # Application-owned Brightspace connector
 
-Status: design and source investigation; not implemented. This supersedes the earlier recommendation to depend on MCP for the live audit. The initial target remains one student's Queen's onQ account.
+Status: initial connector implemented and exercised against Queen's onQ on October 29, 2026. See [live findings](live-audit.md) and [run instructions](../README.md). This document records the design; broader coverage remains staged below.
 
 ## Decision
 
@@ -23,7 +23,7 @@ Inspected the installed `brightspace-mcp-server` package, version `5.1.27`, whos
 | `api/paginate.js` | Handles bookmark and next-link pagination with loop/page limits. Our connector must also return a partial-coverage result when such limits interrupt a fetch. |
 | `tools/get-my-courses.js` | Fetches enrollments, then maps selected fields into a tool response. A direct connector can retain the original permitted fields alongside an app-facing view. |
 
-These are source findings, not proof of successful access at Queen's. Our previous automatic and interactive sign-in attempts remain unsuccessful; their root cause has not been established. Replacing MCP alone is not evidence that authentication will start working.
+These were source findings before implementation. The direct connector subsequently signed in successfully, reused its own protected session across separate commands, renewed a token, and retrieved live course data. The earlier MCP authentication failures remain unexplained; the new connector does not reuse its session or credentials.
 
 The reference package is MIT licensed. If we copy code or substantial portions, retain its copyright and permission notice with the copied code. This design document copies no implementation.
 
@@ -71,7 +71,7 @@ Build a small runnable command and an importable connector core. The command exe
 2. Read supported versions and all pages of the account's course enrollments directly.
 3. For one selected accessible course, read content structure, assignment folders, quiz metadata, own grades, announcements and discussion structure. Read the calendar over an explicit window. Inspect representative attachments, feedback, rubric details and external links as discovered.
 4. Produce a private inventory containing original permitted field names, counts, availability, pagination/coverage, errors and source routes. Produce a separate shareable summary without credentials, personal payloads or course identifiers.
-5. Restart the command and verify that protected session reuse works, or that it clearly reports the need to sign in. Do not add a scheduler until this behavior is proven.
+5. Restart the command and verify that protected session reuse works, or that it clearly reports the need to sign in. Protected reuse and token renewal have now been exercised live; an optional foreground polling worker uses this same audit path.
 
 Acceptance requires at least one successful direct authenticated inventory and a browser comparison for the same course. An authentication failure is a reported blocker, not a successful audit. File byte access and useful text extraction are separate checks. Missing optional resources remain untested until a representative course/object is found.
 
