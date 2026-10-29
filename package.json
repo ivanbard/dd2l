@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "start": "node src/cli.mjs",
     "test": "node --test",
@@ -12,5 +14,9 @@
     "sync": "node src/cli.mjs sync",
     "status": "node src/cli.mjs status"
   },
-  "dependencies": { "playwright-core": "1.58.2" }
+  "dependencies": {
+    "htmlparser2": "12.0.0",
+    "playwright-core": "1.58.2",
+    "unpdf": "2.0.0"
+  }
 }

@@ -11,11 +11,13 @@ const help = `dd2l — direct, read-only Queen's onQ connector (Windows, Node 24
 npm run login                       Open Chrome for school sign-in and MFA
 npm start -- courses                List your course IDs and names
 npm run audit -- [--course ID]       Audit one course (defaults to an accessible active course)
+npm start -- syllabus [--course ID] Retrieve syllabus/course-information sources and text
 npm run sync -- [--course ID]        Repeat that audit every 15 minutes until Ctrl+C
 npm run status                      Show coverage and last successful reads
 npm start -- logout                 Delete dd2l's session and local inventory
 
 audit/sync: --from ISO --to ISO      Calendar window (default: past 30 / next 120 days)
+syllabus: --course ID               Choose the course without changing the sync selection
 
 Data: %LOCALAPPDATA%\\dd2l (session protected for this Windows user; inventory is private local data).
 No MCP server, school password storage, or external model calls.`;
@@ -26,8 +28,9 @@ async function main() {
   } });
   const command = positionals[0];
   if (values.help || !command) { console.log(help); return; }
-  if (positionals.length > 1 || !['login', 'courses', 'audit', 'sync', 'status', 'logout'].includes(command)) throw new Error('Unknown command. Run npm start -- --help.');
-  if (!['audit', 'sync'].includes(command) && Object.keys(values).length) throw new Error('Date/course options apply only to audit and sync.');
+  if (positionals.length > 1 || !['login', 'courses', 'audit', 'syllabus', 'sync', 'status', 'logout'].includes(command)) throw new Error('Unknown command. Run npm start -- --help.');
+  if (!['audit', 'sync', 'syllabus'].includes(command) && Object.keys(values).length) throw new Error('Date/course options apply only to audit, syllabus and sync.');
+  if (command === 'syllabus' && (values.from || values.to)) throw new Error('Calendar date options apply only to audit and sync.');
   if (process.platform !== 'win32' || !process.env.LOCALAPPDATA) throw new Error('This first connector requires Windows with LOCALAPPDATA.');
   const directory = join(process.env.LOCALAPPDATA, 'dd2l');
   await mkdir(directory, { recursive: true });
@@ -47,6 +50,10 @@ async function main() {
       console.log(JSON.stringify({ complete: enrollments.complete, courses: enrollments.data.map(item => ({
         id: item.OrgUnit?.Id, name: item.OrgUnit?.Name, active: item.Access?.IsActive, canAccess: item.Access?.CanAccess,
       })) }, null, 2));
+    } else if (command === 'syllabus') {
+      const summary = await connector.syllabus(values);
+      await atomicWrite(join(directory, 'syllabus-summary.json'), JSON.stringify(summary, null, 2));
+      console.log(JSON.stringify(summary, null, 2));
     } else if (command === 'audit' || command === 'sync') {
       const report = async summary => {
         await atomicWrite(join(directory, 'summary.json'), JSON.stringify(summary, null, 2));
@@ -65,6 +72,7 @@ async function main() {
     else if (command === 'logout') {
       await rm(session.path, { force: true });
       await rm(join(directory, 'summary.json'), { force: true });
+      await rm(join(directory, 'syllabus-summary.json'), { force: true });
       store.clear();
       store.close();
       store = null;

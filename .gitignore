@@ -5,3 +5,4 @@ node_modules/
 *.dpapi
 .dd2l/
 coverage/
+/docs/

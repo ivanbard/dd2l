@@ -212,6 +212,7 @@ test('direct audit traverses a course, retains private source data, and produces
   const summary = await connector.audit({ course: '42', from: '2026-09-01T00:00:00Z', to: '2027-01-01T00:00:00Z' });
   assert.equal(summary.complete, true);
   assert.equal(summary.courseCount, 1);
+  assert.equal(summary.syllabus.readableSourceCount, 1);
   assert.ok(summary.resources.find(item => item.category === 'content_file_sample'));
   assert.ok(summary.resources.find(item => item.category === 'discussion_posts_sample'));
   assert.equal(JSON.stringify(summary).includes('Private'), false);

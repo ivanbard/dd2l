@@ -1,5 +1,6 @@
-import { createHash } from 'node:crypto';
 import { AccessError } from './client.mjs';
+import { readDocument } from './documents.mjs';
+import { classifyOverview, collectSyllabus } from './syllabus.mjs';
 
 function id(value) {
   const result = String(value);
@@ -18,26 +19,28 @@ export function fields(value) {
   return [...keys].sort();
 }
 
-async function sampleFile(client, path) {
-  const response = await client.response(path);
-  const contentType = response.headers.get('content-type') || 'application/octet-stream';
-  const reader = response.body.getReader();
-  const chunks = [];
-  let size = 0;
+async function readResource(client, category, path, { list = false, courseId, file = false } = {}) {
+  const observation = { key: path.split('?')[0], category, course: courseId, source: path,
+    retrievedAt: new Date().toISOString(), outcome: 'available' };
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.length;
-      if (size > 2 * 1024 * 1024) throw new AccessError('partial', 'Representative file exceeds the 2 MiB audit limit; metadata inventory remains available.');
-      chunks.push(value);
-    }
-  } finally { await reader.cancel(); }
-  const bytes = Buffer.concat(chunks);
-  if (bytes.toString('utf8').includes('/d2l/login?sessionExpired=1')) throw new AccessError('needs_login', 'School session has expired.');
-  return { contentType, size, sha256: createHash('sha256').update(bytes).digest('hex'),
-    // shortcut: sample one file up to 2 MiB; add bulk extraction after coverage is measured.
-    base64: bytes.toString('base64'), text: /^(?:text\/|application\/json)/i.test(contentType) ? bytes.toString('utf8') : null };
+    const result = file ? { data: await readDocument(client, path), complete: true } : list ? await client.collection(path) : { data: await client.get(path), complete: true };
+    Object.assign(observation, result);
+    if (!result.complete) observation.outcome = 'partial';
+  } catch (error) {
+    if (!(error instanceof AccessError) || error.code === 'needs_login') throw error;
+    Object.assign(observation, { outcome: error.code === 'partial' ? 'partial' : error.code === 'denied' ? 'denied' : 'failed',
+      error: error.code, message: error.message, status: error.status, retryAfter: error.retryAfter, complete: false });
+  }
+  return observation;
+}
+
+function selectCourse(enrollments, course) {
+  const candidates = enrollments.data.filter(item => item?.OrgUnit?.Id && item.Access?.CanAccess === true)
+    .sort((a, b) => (Date.parse(b.Access.LastAccessed) || 0) - (Date.parse(a.Access.LastAccessed) || 0));
+  const selected = course ? candidates.find(item => String(item.OrgUnit.Id) === id(course)) :
+    candidates.find(item => item.Access?.IsActive === true) ?? candidates[0];
+  if (course && !selected) throw new Error('Requested course was not confirmed accessible in your enrollments.');
+  return selected ? id(selected.OrgUnit.Id) : null;
 }
 
 export class Connector {
@@ -56,6 +59,20 @@ export class Connector {
     return { identity, versions, enrollments };
   }
 
+  async syllabus({ course } = {}) {
+    const { identity, versions, enrollments } = await this.courses();
+    const courseId = selectCourse(enrollments, course);
+    if (!courseId) throw new Error('No accessible course was found.');
+    const le = `/d2l/api/le/${versions.le}/${courseId}`;
+    const content = await readResource(this.client, 'content', `${le}/content/toc`, { courseId });
+    const overview = classifyOverview(await readResource(this.client, 'overview', `${le}/overview`, { courseId }));
+    const result = await collectSyllabus(this.client, { le, courseId, content, overview });
+    const summary = { finishedAt: new Date().toISOString(), scope: 'syllabus sources for one course', versions,
+      courseCount: enrollments.data.length, ...result.summary };
+    this.store.commit(identity, this.client.origin, [content, overview, ...result.observations], summary, enrollments);
+    return summary;
+  }
+
   async audit({ course, from, to } = {}) {
     from ??= new Date(Date.now() - 30 * 86400_000).toISOString();
     to ??= new Date(Date.now() + 120 * 86400_000).toISOString();
@@ -65,35 +82,24 @@ export class Connector {
     const { identity, versions, enrollments } = await this.courses();
     const observations = [];
     const capture = async (category, path, { list = false, courseId, file = false } = {}) => {
-      const observation = { key: path.split('?')[0], category, course: courseId, source: path,
-        retrievedAt: new Date().toISOString(), outcome: 'available' };
-      try {
-        const result = file ? { data: await sampleFile(this.client, path), complete: true } : list ? await this.client.collection(path) : { data: await this.client.get(path), complete: true };
-        Object.assign(observation, result);
-        if (!result.complete) observation.outcome = 'partial';
-      } catch (error) {
-        if (!(error instanceof AccessError) || error.code === 'needs_login') throw error;
-        Object.assign(observation, { outcome: error.code === 'partial' ? 'partial' : error.code === 'denied' ? 'denied' : 'failed',
-          error: error.code, message: error.message, status: error.status, retryAfter: error.retryAfter, complete: false });
-      }
+      const observation = await readResource(this.client, category, path, { list, courseId, file });
       observations.push(observation);
       return observation;
     };
     observations.push({ key: 'enrollments', category: 'enrollments', ...enrollments,
       outcome: enrollments.complete ? 'available' : 'partial', retrievedAt: new Date().toISOString() });
-    const candidates = enrollments.data.filter(item => item?.OrgUnit?.Id && item.Access?.CanAccess === true)
-      .sort((a, b) => (Date.parse(b.Access.LastAccessed) || 0) - (Date.parse(a.Access.LastAccessed) || 0));
-    const selected = course ? candidates.find(item => String(item.OrgUnit.Id) === id(course)) :
-      candidates.find(item => item.Access?.IsActive === true) ?? candidates[0];
-    if (course && !selected) throw new Error('Requested course was not confirmed accessible in your enrollments.');
-    const courseId = selected ? id(selected.OrgUnit.Id) : null;
+    const courseId = selectCourse(enrollments, course);
+    let syllabus;
     if (courseId) {
       const le = `/d2l/api/le/${versions.le}/${courseId}`;
       const lp = `/d2l/api/lp/${versions.lp}/${courseId}`;
       // Sequential reads keep this first discovery pass bounded and gentle on the tenant.
       const read = (category, path, options) => capture(category, path, { courseId, ...options });
       const content = await read('content', `${le}/content/toc`);
-      await read('overview', `${le}/overview`);
+      const overview = classifyOverview(await read('overview', `${le}/overview`));
+      const result = await collectSyllabus(this.client, { le, courseId, content, overview });
+      syllabus = result.summary;
+      observations.push(...result.observations);
       const assignments = await read('assignments', `${le}/dropbox/folders/`, { list: true });
       await read('quizzes', `${le}/quizzes/`, { list: true });
       await read('grades', `${le}/grades/values/myGradeValues/`, { list: true });
@@ -132,12 +138,17 @@ export class Connector {
         return null;
       };
       const topic = findTopic(content.data);
-      if (topic) await read('content_file_sample', `${le}/content/topics/${id(topic.TopicId)}/file`, { file: true });
+      if (topic) {
+        const path = `${le}/content/topics/${id(topic.TopicId)}/file`;
+        const existing = observations.find(item => item.category === 'syllabus_source' && item.source === path && item.outcome === 'available');
+        if (existing) observations.push({ ...existing, key: path, category: 'content_file_sample' });
+        else await read('content_file_sample', path, { file: true });
+      }
     }
     const summary = {
       finishedAt: new Date().toISOString(), scope: 'one selected accessible course; representative detail reads',
       versions, courseCount: enrollments.data.length, enrollmentCoverageComplete: enrollments.complete,
-      selectedCourse: courseId ? 'course-1' : null, calendarWindow: { from, to },
+      selectedCourse: courseId ? 'course-1' : null, calendarWindow: { from, to }, syllabus,
       complete: Boolean(courseId) && observations.every(item => item.complete),
       retryAfter: Math.max(0, ...observations.filter(item => item.error === 'retry_wait').map(item => item.retryAfter || 60_000)),
       resources: observations.map(item => ({ category: item.category, outcome: item.outcome,

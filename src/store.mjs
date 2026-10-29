@@ -70,14 +70,14 @@ export class Store {
       for (const raw of observations) {
         const observation = withoutCredentials(raw);
         const successful = observation.outcome === 'available';
-        const denied = observation.outcome === 'denied';
+        const cleared = ['denied', 'not_configured'].includes(observation.outcome);
         const prior = this.db.prepare('SELECT data,last_success,last_source FROM resources WHERE key=?').get(observation.key);
         this.db.prepare('INSERT OR REPLACE INTO resources (key,course,category,data,last_success,checked_at,outcome,observation,last_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
           observation.key, observation.course ?? null, observation.category,
-          successful ? JSON.stringify(observation.data) : denied ? null : prior?.data ?? null,
-          successful ? stamp : denied ? null : prior?.last_success ?? null,
+          successful ? JSON.stringify(observation.data) : cleared ? null : prior?.data ?? null,
+          successful ? stamp : cleared ? null : prior?.last_success ?? null,
           stamp, observation.outcome, JSON.stringify(observation),
-          successful ? observation.source ?? null : denied ? null : prior?.last_source ?? null);
+          successful ? observation.source ?? null : cleared ? null : prior?.last_source ?? null);
       }
       // Only a complete, unfiltered enrollment read can establish loss of course access.
       if (enrollments?.complete) {
