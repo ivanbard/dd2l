@@ -8,7 +8,7 @@ import { Connector, sync } from './connector.mjs';
 
 const help = `dd2l — direct, read-only Queen's onQ connector (Windows, Node 24+)
 
-npm run login                       Open Edge for school sign-in and MFA
+npm run login                       Open Chrome for school sign-in and MFA
 npm start -- courses                List your course IDs and names
 npm run audit -- [--course ID]       Audit one course (defaults to an accessible active course)
 npm run sync -- [--course ID]        Repeat that audit every 15 minutes until Ctrl+C

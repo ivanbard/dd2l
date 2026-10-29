@@ -100,8 +100,8 @@ async function mintSession(origin, value, fetchImpl) {
 export async function login(session, client, { onProgress = console.error, expectedAccount } = {}) {
   const { chromium } = await import('playwright-core');
   const versions = await client.versions();
-  onProgress('Opening Edge. Complete your school sign-in and MFA in the browser.');
-  const browser = await chromium.launch({ channel: 'msedge', headless: false, timeout: 30_000 });
+  onProgress('Opening Chrome. Complete your school sign-in and MFA in the browser.');
+  const browser = await chromium.launch({ channel: 'chrome', headless: false, timeout: 30_000 });
   try {
     const context = await browser.newContext();
     const page = await context.newPage();

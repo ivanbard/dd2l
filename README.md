@@ -2,11 +2,11 @@
 
 A direct, read-only Brightspace connector for a customizable, promptable student companion. The first target is one Queen's onQ account on Windows.
 
-The connector signs in using your installed Microsoft Edge browser, reuses a protected school session, inventories course data, and can refresh one selected course every 15 minutes. It runs directly against Brightspace; no MCP server or model provider is involved.
+The connector signs in using your installed Google Chrome browser, reuses a protected school session, inventories course data, and can refresh one selected course every 15 minutes. It runs directly against Brightspace; no MCP server or model provider is involved.
 
 ## Run
 
-Requires Windows, Node.js 24 or newer, and Microsoft Edge. From this directory:
+Requires Windows, Node.js 24 or newer, and Google Chrome. From this directory:
 
 ```powershell
 npm ci
@@ -16,7 +16,7 @@ npm run audit
 npm run status
 ```
 
-Complete school sign-in and MFA in Edge when requested. No school password is collected or saved. The default audit prefers the most recently accessed active, accessible course, falling back to another accessible enrollment if necessary. To select a particular course, use its ID from `courses`:
+Complete school sign-in and MFA in Chrome when requested. No school password is collected or saved. The default audit prefers the most recently accessed active, accessible course, falling back to another accessible enrollment if necessary. To select a particular course, use its ID from `courses`:
 
 ```powershell
 npm run audit -- --course COURSE_ID --from 2026-09-01T00:00:00Z --to 2027-01-01T00:00:00Z
