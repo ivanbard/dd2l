@@ -37,7 +37,7 @@ test('PDF bytes and actual extracted text are distinct from blank or broken docu
 });
 
 test('document read limits and body-stream failures remain explicit partial/retry outcomes', async () => {
-  await assert.rejects(readDocument(responseClient(Buffer.alloc(2 * 1024 * 1024 + 1), 'text/plain'), '/file'), { code: 'partial' });
+  await assert.rejects(readDocument(responseClient(Buffer.alloc(20 * 1024 * 1024 + 1), 'text/plain'), '/file'), { code: 'partial' });
   const stream = new ReadableStream({ start(controller) { controller.error(new Error('private network detail')); } });
   const client = { response: async () => new Response(stream, { headers: { 'content-type': 'text/plain' } }) };
   await assert.rejects(readDocument(client, '/file'), error => error.code === 'retry_wait' && !error.message.includes('private'));
@@ -93,7 +93,7 @@ test('hidden sources are not fetched and external links never receive school cre
   assert.equal(result.summary.readableSourceCount, 0);
   assert.equal(result.summary.textCoverageComplete, false);
   assert.equal(result.summary.unreadLinkCount, 1);
-  assert.equal(result.observations.find(item => item.data?.topicId === 3).data.links[0].status, 'external');
+  assert.equal(result.observations.find(item => item.data?.topicId === 3).data.links[0].status, 'external_auth_required');
 });
 
 test('syllabus document budget reports deferred candidates instead of claiming full coverage', async () => {

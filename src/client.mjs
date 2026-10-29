@@ -19,6 +19,10 @@ export async function request(url, options = {}, fetchImpl = fetch) {
   } catch {
     throw new AccessError('retry_wait', 'Network request failed or timed out.');
   }
+  return checkedResponse(response, url);
+}
+
+export function checkedResponse(response, url) {
   if (response.status === 401) throw new AccessError('needs_login', 'School sign-in is required.', { status: 401 });
   if (response.status >= 300 && response.status < 400) {
     const target = new URL(response.headers.get('location') || '/', url);
@@ -126,7 +130,7 @@ export class BrightspaceClient {
       }
       return { data, pages, complete: true };
     } catch (error) {
-      if (!(error instanceof AccessError) || error.code === 'needs_login' || !pages) throw error;
+      if (!(error instanceof AccessError) || error.code === 'needs_login' || error.status === 429 || !pages) throw error;
       return { data, pages, complete: false, error: error.code, message: error.message, retryAfter: error.retryAfter };
     }
   }

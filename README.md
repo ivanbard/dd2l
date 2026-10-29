@@ -2,7 +2,7 @@
 
 A direct, read-only Brightspace connector for a customizable, promptable student companion. The first target is one Queen's onQ account on Windows.
 
-The connector signs in using your installed Google Chrome browser, reuses a protected school session, inventories course data, and can refresh one selected course every 15 minutes. It runs directly against Brightspace; no MCP server or model provider is involved.
+The connector signs in using your installed Google Chrome browser, reuses a protected school session, inventories course data, and can refresh a selected course or rotate through all accessible courses. It runs directly against Brightspace; no MCP server or model provider is involved.
 
 ## Run
 
@@ -23,19 +23,33 @@ Complete school sign-in and MFA in Chrome when requested. No school password is 
 npm run audit -- --course COURSE_ID --from 2026-09-01T00:00:00Z --to 2027-01-01T00:00:00Z
 npm run sync -- --course COURSE_ID
 npm start -- syllabus --course COURSE_ID
+npm run audit -- --all
+npm run sync -- --all
 ```
 
 Replace `COURSE_ID` with the numeric ID. `sync` keeps running in the terminal until Ctrl+C; shutdown waits for the current bounded audit to finish. Without `--course`, sync reuses the last selected course and pins that choice for subsequent polls. Keep the computer and terminal running. If the school session expires, the worker stops with `needs_login`; run `login`, then restart `sync`. Temporary failures back off, and server retry guidance is respected. Concurrent mutating commands are prevented by a process lock; `status` can inspect a running worker.
+
+`--all` rotates through up to five accessible course offerings per pass, including historical courses still accessible to this account. It preserves the pinned single-course selection. Each course's assignment, document and discussion cursors are saved after its audit commits; another pass resumes the remaining objects. Sync waits 15 minutes between passes, so a full sweep can take multiple polling intervals. A rate-limit response stops further reads in that pass and honors the server's retry delay.
+
+For a sustained foreground check, run `npm run soak -- --minutes 180`. This uses the real sync cadence, writes structural results to the ignored `.dd2l/soak-summary.json`, and stops after the observation window and any in-progress audit finish. It does not force session expiry or bypass MFA. A one-minute smoke run has passed; a multi-hour run remains to be performed.
 
 Run `npm start -- --help` for commands and `npm test` for the focused checks.
 
 ## What is collected
 
-The audit enumerates all enrolled course offerings, then reads one course's content tree, assignment folders, quiz list, own grade values, announcements, discussion forums, own groups/sections, and calendar events. It attempts representative assignment detail, own submissions/feedback, rubric, discussion topic/posts, and file reads where matching objects exist. It does not infer that a quiz is absent from a successful empty quiz list; content and gradebook sources may expose additional quiz references.
+The audit enumerates course offerings, then reads the chosen course's content tree, assignment folders, quiz list, own grade values, announcements, discussion forums, own groups/sections, and calendar events. It traverses assignments and accessible content files in resumable batches, including own submissions, released feedback, rubric tables and attachments. Discussion forum/topic/post reads and file attachments have independent parent-specific cursors. `traversal` reports the batch limits; an unfinished batch is not reported as complete.
+
+Assignment traversal prioritizes graded and rubric-bearing folders, then continues through the others, up to 25 per pass. Feedback targets your verified user identity or your own resolved group; an unresolved group remains unknown. Full embedded rubric tables are retained, with a dedicated association lookup used when needed. Feedback denials are not interpreted as ungraded or unsubmitted work. See the [feedback/rubric investigation](docs/feedback-rubric-retest.md) for the original access investigation.
+
+Quiz discovery combines list entries, explicit content references, gradebook candidates and permitted grade/tool associations. A grade item named “Quiz” is only a candidate until a real quiz identifier/association is verified. Quiz metadata and attempts are read separately; attempts are explicitly filtered to the verified current user. Denied or unread attempts remain unknown. For events marked recurring, the connector requests the server's occurrence list rather than guessing dates or timezone rules; this route still needs a real accessible recurring-event example on onQ.
 
 Syllabus retrieval is part of normal audit/sync and can also run alone with `syllabus`. It reads the optional overview and its attachment, relevant module/topic descriptions, and file/HTML topics under syllabus or course-information modules. It preserves each source's location, parent context, retrieval time and current access/text status. An overview-specific 404 means `not_configured`; unrelated 404s retain their original meaning. An empty overview is not counted as a readable syllabus. Different documents remain separate instead of being silently merged into one authoritative text.
 
-Original permitted JSON fields are retained, with credential-bearing URL parameters redacted. Syllabus reads are bounded to 100 candidate sections and 20 documents per course, each up to 2 MiB; the ordinary audit also samples a content file and assignment attachment. PDFs, HTML and plain text support production text extraction. PDF parsing runs in an isolated worker with a 30-second deadline, 256 MiB JavaScript heap limit, a 250-page limit, and explicit truncation beyond one million text characters. Office files, scans without embedded text, and arbitrary linked targets remain explicit gaps. Linked-topic metadata is resolved, but school credentials are never sent to arbitrary links. No assignments, grades, posts, quiz attempts, or completion states are written. Browser navigation may update normal school access timestamps.
+Original permitted JSON fields are retained, with authentication/password fields and credential-bearing URL parameters redacted. Modern DOCX/PPTX/XLSX, PDF, HTML and plain text support local extraction; Office macros and formulas are not executed. Images and scanned PDF pages can use Windows OCR with an installed user-profile OCR language. OCR text is marked for review. Legacy binary Office files, arbitrary archives and encrypted documents are not supported by these readers.
+
+Documents have a 20 MiB read limit; raw bytes are retained only up to 2 MiB, while larger successfully parsed documents retain text and metadata. PDF workers have a 30-second deadline, 256 MiB JavaScript heap limit and 250-page limit. At most ten empty-text PDF pages per document are rendered for OCR, with a 16-million-pixel image limit. Text is capped at one million characters. Office expansion, HTML complexity and document/link counts are bounded; limits stay explicit as partial coverage. Syllabus retrieval processes up to 100 candidate sections and 20 document attempts per course. Ordinary traversal handles 20 content files per pass, five forums, five topics per selected forum, and two attachments per selected assignment/topic. API collections follow pagination with existing loop/page limits.
+
+Linked school documents use same-school session cookies only on approved content paths, or use their verified API topic IDs. Public reference documents are read only from explicitly supported hosts without school credentials. Source links are deduplicated; referenced websites are not recursively crawled through their citations/navigation. Surveys, self-enrollment and other activity actions are never activated by the document reader. Public YouTube caption retrieval preserves timestamps when the provider returns a caption track; sign-in/bot checks or absent captions remain unavailable. Private SharePoint, Teams, publisher/LTI content and other providers need separate readers/authorization. No assignments, grades, posts, quiz attempts, or completion states are written. Browser navigation may update normal school access timestamps.
 
 ## Local data and app integration
 
@@ -44,7 +58,7 @@ All runtime data lives outside this repository in `%LOCALAPPDATA%\dd2l`:
 | File | Purpose |
 | --- | --- |
 | `session.dpapi` | Session cookies, XSRF material, API token and verified identity, encrypted with Windows DPAPI for the current Windows user. |
-| `inventory.sqlite` | Private source payloads, representative file samples, per-resource coverage, successful retrieval times and current outcomes. This database contains personal coursework and grades and is **not encrypted**. |
+| `inventory.sqlite` | Private source payloads, extracted text/small files, traversal cursors, per-resource coverage, successful retrieval times and current outcomes. This database contains personal coursework and grades and is **not encrypted**. |
 | `summary.json` | Latest structural audit summary: counts, field names and coverage without course names, source IDs, grades or document bodies. Review before sharing. |
 | `syllabus-summary.json` | Latest syllabus-only command summary with readability, formats, coverage and unresolved counts. |
 | `worker.lock` | Prevents competing login/audit/sync processes; a dead process's lock is recovered on the next run. |
@@ -57,6 +71,6 @@ Syllabus content lives in individual `syllabus_source` resource rows; the `sylla
 
 An audit can complete successfully as a command while reporting `complete: false`: resource-level denials, unavailable routes, or partial collections remain visible. A successful collection read establishes coverage of that endpoint, not of every activity the website or an external tool may contain.
 
-The interface, prompt retrieval, Office extraction/OCR, external LTI integrations, unattended Windows startup, and a full audit of every course are later milestones.
+The interface, prompt retrieval, private external-provider integrations and unattended Windows startup remain later milestones. See [the gap-resolution report](docs/gap-resolution.md) for implemented paths, live evidence and remaining access/verification limits.
 
 Do not commit credentials, session cookies, access tokens, downloaded coursework, grades, or classmates' personal information. Discovery evidence should contain access outcomes and field names rather than private payloads.

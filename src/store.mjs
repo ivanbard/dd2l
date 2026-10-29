@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 
 export function withoutCredentials(value) {
   return JSON.parse(JSON.stringify(value, (key, item) => {
-    if (/^(?:access_token|refresh_token|authorization|cookie|csrfToken|xsrfToken)$/i.test(key)) return '[redacted]';
+    if (/^(?:access_token|refresh_token|authorization|cookie|csrfToken|xsrfToken|password|passcode)$/i.test(key)) return '[redacted]';
     if (typeof item === 'string') return item.replace(/([?&](?:amp;)?(?:d2lSessionVal|access_token|refresh_token|csrf|xsrf|token)=)[^&\s"'<>]*/gi, '$1[redacted]');
     return item;
   }));
@@ -58,6 +58,10 @@ export class Store {
     return row ? JSON.parse(row.value) : null;
   }
   meta(key, value) { this.db.prepare('INSERT OR REPLACE INTO meta VALUES (?, ?)').run(key, JSON.stringify(value)); }
+  resource(key) {
+    const row = this.db.prepare('SELECT * FROM resources WHERE key=?').get(key);
+    return row ? { ...row, data: row.data ? JSON.parse(row.data) : null, observation: JSON.parse(row.observation) } : null;
+  }
 
   commit(identity, origin, observations, summary, enrollments) {
     const account = `${origin}:${identity.Identifier}`;
@@ -69,14 +73,14 @@ export class Store {
       this.meta('account', account);
       for (const raw of observations) {
         const observation = withoutCredentials(raw);
-        const successful = observation.outcome === 'available';
+        const successful = observation.outcome === 'available' && observation.complete !== false;
         const cleared = ['denied', 'not_configured'].includes(observation.outcome);
         const prior = this.db.prepare('SELECT data,last_success,last_source FROM resources WHERE key=?').get(observation.key);
         this.db.prepare('INSERT OR REPLACE INTO resources (key,course,category,data,last_success,checked_at,outcome,observation,last_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
           observation.key, observation.course ?? null, observation.category,
           successful ? JSON.stringify(observation.data) : cleared ? null : prior?.data ?? null,
-          successful ? stamp : cleared ? null : prior?.last_success ?? null,
-          stamp, observation.outcome, JSON.stringify(observation),
+          successful ? observation.cached ? prior?.last_success ?? observation.retrievedAt : stamp : cleared ? null : prior?.last_success ?? null,
+          stamp, observation.outcome, JSON.stringify(successful ? { ...observation, data: undefined } : observation),
           successful ? observation.source ?? null : cleared ? null : prior?.last_source ?? null);
       }
       // Only a complete, unfiltered enrollment read can establish loss of course access.

@@ -140,7 +140,7 @@ test('partial/failed reads retain last good data; explicit denials clear it; acc
   const observation = { key: 'grades', course: '42', category: 'grades', source: '/d2l/api/grades/?window=original', outcome: 'available', complete: true, data: [90] };
   const enrollments = { complete: true, data: [enrollment] };
   store.commit(identity, SCHOOL, [observation], {}, enrollments);
-  for (const outcome of ['partial', 'failed']) {
+  for (const outcome of ['partial', 'failed', 'available']) {
     store.commit(identity, SCHOOL, [{ ...observation, source: '/d2l/api/grades/?window=new', outcome, complete: false, data: [] }], {}, enrollments);
     assert.equal(store.db.prepare('SELECT data FROM resources').get().data, '[90]');
     assert.equal(store.db.prepare('SELECT last_source FROM resources').get().last_source, observation.source);
@@ -213,8 +213,8 @@ test('direct audit traverses a course, retains private source data, and produces
   assert.equal(summary.complete, true);
   assert.equal(summary.courseCount, 1);
   assert.equal(summary.syllabus.readableSourceCount, 1);
-  assert.ok(summary.resources.find(item => item.category === 'content_file_sample'));
-  assert.ok(summary.resources.find(item => item.category === 'discussion_posts_sample'));
+  assert.ok(summary.resources.find(item => item.category === 'content_file'));
+  assert.ok(summary.resources.find(item => item.category === 'discussion_posts'));
   assert.equal(JSON.stringify(summary).includes('Private'), false);
   assert.equal(JSON.stringify(summary).includes('private-user'), false);
   const saved = store.db.prepare("SELECT data FROM resources WHERE category='content'").get().data;
@@ -253,4 +253,160 @@ test('worker lock prevents overlapping commands and recovers a dead process lock
   await writeFile(join(directory, 'worker.lock'), JSON.stringify({ pid: 2147483647, id: 'dead' }));
   const recovered = await lock(directory);
   await recovered();
+});
+
+for (const targetSource of ['membership', 'own_submission', 'unresolved']) {
+  test(`group feedback uses ${targetSource} evidence and never guesses a user/category ID`, async t => {
+    let store;
+    t.after(() => store?.close());
+    const directory = await temporary(t);
+    store = new Store(directory);
+    const fake = fakeBrightspace();
+    const calls = [];
+    const rubric = { RubricId: 50, CriteriaGroups: [{ Criteria: [{ CriterionId: 51 }], Levels: [{ LevelId: 52 }] }] };
+    const folder = { Id: 12, DropboxType: 1, GroupTypeId: 99, GradeItemId: 90, Assessment: { Rubrics: [rubric] } };
+    const fetchImpl = async (url, options) => {
+      const path = new URL(url).pathname;
+      calls.push(path);
+      if (path.endsWith('/dropbox/folders/')) return json([{ Id: 11, DropboxType: 2 }, folder]);
+      if (path.endsWith('/grades/values/myGradeValues/')) return json([{ GradeObjectIdentifier: '90', PointsNumerator: 0 }]);
+      if (path.endsWith('/42/groups/')) return targetSource === 'own_submission' ? json({}, 403) :
+        json([{ GroupCategoryId: targetSource === 'unresolved' ? 100 : 99, GroupId: 55 }]);
+      if (path.endsWith('/dropbox/folders/12')) return json(folder);
+      if (path.endsWith('/12/submissions/mysubmissions/')) return targetSource === 'own_submission' ?
+        json([{ Entity: { EntityType: 'Group', EntityId: 55 }, Submissions: [] }]) : json({}, 403);
+      if (path.endsWith('/12/feedback/group/55')) return json({ Score: 0, Feedback: { Text: 'Private group feedback' }, RubricAssessments: [{ RubricId: 50 }] });
+      assert.ok(!path.includes('/12/feedback/'), 'Must not use a user ID, category ID, or ambiguous group.');
+      assert.ok(!path.includes('/rubrics/') || !new URL(url).searchParams.has('objectId') || new URL(url).searchParams.get('objectId') !== '12', 'Embedded complete rubric data does not need another API request.');
+      return fake.fetchImpl(url, options);
+    };
+    const session = new Session(directory, { crypt: memoryCrypt });
+    session.value = credentials();
+    const connector = new Connector(new BrightspaceClient(session, { fetchImpl }), store);
+    const summary = await connector.audit({ course: '42' });
+    const feedback = summary.resources.find(item => item.category === 'own_feedback');
+    assert.equal(feedback.outcome, targetSource === 'unresolved' ? 'unknown' : 'available');
+    assert.equal(calls.some(path => path.endsWith('/feedback/group/55')), targetSource !== 'unresolved');
+    const saved = store.db.prepare("SELECT data FROM resources WHERE category='rubrics'").get();
+    assert.deepEqual(JSON.parse(saved.data), [rubric]);
+    assert.equal(summary.resources.find(item => item.category === 'rubrics').count, 1);
+    assert.equal(JSON.stringify(summary).includes('Private group feedback'), false);
+    if (targetSource !== 'unresolved') assert.equal(JSON.parse(store.db.prepare("SELECT data FROM resources WHERE category='own_feedback'").get().data).Score, 0);
+  });
+}
+
+test('audit prioritizes graded/rubric assignments then traverses the rest, preserving a real 403', async t => {
+  let store;
+  t.after(() => store?.close());
+  const directory = await temporary(t);
+  store = new Store(directory);
+  const fake = fakeBrightspace();
+  const folders = [{ Id: 11 }, { Id: 12, GradeItemId: 90 }, { Id: 13, Assessment: { Rubrics: [{ RubricId: 50 }] } }];
+  const fetchImpl = async (url, options) => {
+    const path = new URL(url).pathname;
+    if (path.endsWith('/dropbox/folders/')) return json(folders);
+    if (path.endsWith('/grades/values/myGradeValues/')) return json([{ GradeObjectIdentifier: 90, PointsNumerator: 10 }]);
+    if (path.endsWith('/folders/12')) return json(folders[1]);
+    if (path.endsWith('/folders/13')) return json(folders[2]);
+    if (path.endsWith('/12/feedback/user/7')) return json({ Score: 10 });
+    if (path.endsWith('/13/feedback/user/7')) return json({}, 403);
+    return fake.fetchImpl(url, options);
+  };
+  const session = new Session(directory, { crypt: memoryCrypt });
+  session.value = credentials();
+  const summary = await new Connector(new BrightspaceClient(session, { fetchImpl }), store).audit({ course: '42' });
+  assert.equal(summary.resources.filter(item => item.category === 'assignment_detail').length, 3);
+  assert.deepEqual(summary.resources.filter(item => item.category === 'own_feedback').map(item => item.outcome), ['available', 'denied', 'available']);
+  const rubrics = store.db.prepare("SELECT key,data FROM resources WHERE category='rubrics'").all();
+  assert.equal(rubrics.length, 3);
+  assert.ok(rubrics.some(row => row.key.includes('objectId=12') && row.data === '[]'));
+  assert.ok(rubrics.some(row => row.key.includes('/folders/13/assessment/rubrics')));
+});
+
+test('assignment traversal resumes past the first batch and does not keep sampling the same folders', async t => {
+  let store; t.after(() => store?.close()); store = new Store(await temporary(t));
+  const fake = fakeBrightspace(), visited = [];
+  const folders = Array.from({ length: 30 }, (_, index) => ({ Id: index + 1 }));
+  const fetchImpl = async (url, options) => {
+    const path = new URL(url).pathname;
+    if (path.endsWith('/dropbox/folders/')) return json(folders);
+    const match = path.match(/\/dropbox\/folders\/(\d+)$/);
+    if (match) { visited.push(Number(match[1])); return json({ Id: Number(match[1]) }); }
+    return fake.fetchImpl(url, options);
+  };
+  const session = new Session('', { crypt: memoryCrypt }); session.value = credentials();
+  const connector = new Connector(new BrightspaceClient(session, { fetchImpl }), store);
+  const first = await connector.audit({ course: '42' });
+  assert.equal(first.traversal.assignments.processed, 25);
+  await connector.audit({ course: '42' });
+  assert.deepEqual([...new Set(visited)].sort((a, b) => a - b), folders.map(folder => folder.Id));
+  assert.equal(store.getMeta('cursor:42:assignments:'), 0);
+});
+
+test('all-course passes advance five at a time without changing the pinned sync course', async () => {
+  const metadata = new Map([['selected_course', 'pinned']]);
+  const store = { getMeta: key => metadata.get(key), meta: (key, value) => metadata.set(key, value) };
+  const connector = new Connector({}, store);
+  connector.courses = async () => ({ enrollments: { complete: true, data: Array.from({ length: 7 }, (_, i) => ({ OrgUnit: { Id: i + 1 }, Access: { CanAccess: true } })) } });
+  const visited = [];
+  connector.audit = async ({ course }) => { visited.push(course); store.meta('selected_course', course); return { complete: true }; };
+  const first = await connector.auditAll({});
+  assert.equal(first.coursesProcessed, 5); assert.equal(first.nextCourseOffset, 5);
+  await connector.auditAll({});
+  assert.deepEqual(visited, ['1', '2', '3', '4', '5', '6', '7']);
+  assert.equal(store.getMeta('selected_course'), 'pinned');
+});
+
+test('rate limiting aborts traversal immediately and preserves the prior snapshot/checkpoint', async t => {
+  let store; t.after(() => store?.close()); store = new Store(await temporary(t));
+  const fake = fakeBrightspace(); const calls = [];
+  const session = new Session('', { crypt: memoryCrypt }); session.value = credentials();
+  const connector = new Connector(new BrightspaceClient(session, { fetchImpl: fake.fetchImpl }), store);
+  await connector.audit({ course: '42' });
+  const before = store.resource('/d2l/api/le/1.100/42/content/toc');
+  connector.client.fetch = async (url, options) => {
+    const path = new URL(url).pathname; calls.push(path);
+    return path.endsWith('/content/toc') ? json({}, 429, { 'retry-after': '120' }) : fake.fetchImpl(url, options);
+  };
+  await assert.rejects(connector.audit({ course: '42' }), error => error.code === 'retry_wait' && error.retryAfter === 120_000);
+  assert.equal(calls.some(path => path.endsWith('/dropbox/folders/')), false);
+  assert.deepEqual(store.resource(before.key).data, before.data);
+});
+
+test('recurring events retain server-provided occurrences and quiz attempts are scoped to the current user', async t => {
+  let store; t.after(() => store?.close()); store = new Store(await temporary(t));
+  const fake = fakeBrightspace(); const paths = [];
+  const occurrence = { CalendarEventId: 90, StartDateTime: '2026-11-01T17:00:00Z', EndDateTime: '2026-11-01T18:00:00Z' };
+  const fetchImpl = async (url, options) => {
+    const parsed = new URL(url); paths.push(parsed.pathname);
+    if (parsed.pathname.endsWith('/calendar/events/myEvents/')) return json({ Objects: [{ CalendarEventId: 90, IsRecurring: true }], Next: null });
+    if (parsed.pathname.endsWith('/calendar/event/90/occurrences')) return json({ EventDataInfo: { CalendarEventId: 90 }, Occurrences: [occurrence] });
+    if (parsed.pathname.endsWith('/quizzes/')) return json([{ QuizId: 55, Name: 'Quiz' }]);
+    if (parsed.pathname.endsWith('/quizzes/55/attempts/')) { assert.equal(parsed.searchParams.get('userId'), '7'); return json({ Objects: [], Next: null }); }
+    return fake.fetchImpl(url, options);
+  };
+  const session = new Session('', { crypt: memoryCrypt }); session.value = credentials();
+  await new Connector(new BrightspaceClient(session, { fetchImpl }), store).audit({ course: '42' });
+  assert.ok(paths.some(path => path.endsWith('/quizzes/55/attempts/')));
+  const saved = store.db.prepare("SELECT data FROM resources WHERE category='calendar_occurrences'").get();
+  assert.deepEqual(JSON.parse(saved.data).Occurrences, [occurrence]);
+});
+
+test('a denied quiz list can be supplemented by verified grade/tool associations without inventing quiz IDs', async t => {
+  let store; t.after(() => store?.close()); store = new Store(await temporary(t));
+  const fake = fakeBrightspace(); const paths = [];
+  const fetchImpl = async (url, options) => {
+    const parsed = new URL(url); paths.push(parsed.pathname);
+    if (parsed.pathname.endsWith('/quizzes/')) return json({}, 403);
+    if (parsed.pathname.endsWith('/grades/values/myGradeValues/')) return json([{ GradeObjectIdentifier: 88, GradeObjectName: 'Quiz 1' }]);
+    if (parsed.pathname.endsWith('/grades/88')) return json({ Id: 88, AssociatedTool: { ToolId: 17, ToolItemId: 55 } });
+    if (parsed.pathname.endsWith('/tools/orgUnits/42/17')) { assert.equal(parsed.searchParams.get('namesOnly'), 'true'); return json({ ToolId: 17, DisplayName: 'Quizzes' }); }
+    return fake.fetchImpl(url, options);
+  };
+  const session = new Session('', { crypt: memoryCrypt }); session.value = credentials();
+  const summary = await new Connector(new BrightspaceClient(session, { fetchImpl }), store).audit({ course: '42' });
+  assert.ok(paths.some(path => path.endsWith('/quizzes/55')));
+  assert.equal(summary.quizDiscovery.confirmedReferences, 1);
+  assert.equal(summary.quizDiscovery.unresolvedCandidates, 0);
+  assert.equal(summary.quizDiscovery.sourcesComplete, false);
 });

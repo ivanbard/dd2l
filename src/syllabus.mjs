@@ -1,5 +1,6 @@
 import { AccessError, apiUrl } from './client.mjs';
 import { descriptionContent, readDocument } from './documents.mjs';
+import { readLinkedDocument, actionLink } from './links.mjs';
 
 const syllabusTitle = /syllab|course\s+(?:outline|overview|information|polic|guide)|\boutline\b|plan de cours/i;
 const explicitTitle = /syllab|course\s+outline|plan de cours/i;
@@ -42,9 +43,10 @@ export async function collectSyllabus(client, { le, courseId, content, overview 
   const catalog = [];
   let documentReads = 0;
   let limited = false;
+  const resolved = new Map();
   const source = async (descriptor, action) => {
     const identity = descriptor.kind === 'overview' ? 'overview' : descriptor.kind === 'overview_attachment' ? 'overview_attachment' :
-      `${descriptor.kind}:${descriptor.topicId ?? descriptor.moduleId ?? JSON.stringify([...(descriptor.parents || []), descriptor.title])}`;
+      `${descriptor.kind}:${descriptor.kind === 'linked_document' ? descriptor.url : descriptor.topicId ?? descriptor.moduleId ?? JSON.stringify([...(descriptor.parents || []), descriptor.title])}`;
     const key = `syllabus:${courseId}:${identity}`;
     const record = { key, category: 'syllabus_source', course: courseId, source: descriptor.source || `${le}/content/toc`,
       retrievedAt: new Date().toISOString(), outcome: 'available', complete: true };
@@ -56,7 +58,7 @@ export async function collectSyllabus(client, { le, courseId, content, overview 
       const role = descriptor.kind === 'overview_attachment' && explicitTitle.test(data.text?.slice(0, 2000) || '') ? 'explicit_syllabus' : descriptor.role;
       record.data = { ...descriptor, ...data, role };
       entry = { ...entry, outcome: 'available', textStatus: data.textStatus, textCharacters: data.text?.trim().length || 0, format: data.format,
-        pages: data.pages, links: data.links || [], source: record.source, role };
+        pages: data.pages, links: data.links || [], linksLimited: data.linksLimited, source: record.source, role };
       if (data.textStatus === 'failed' || data.textStatus === 'partial') {
         record.complete = false;
         record.outcome = 'partial';
@@ -64,12 +66,18 @@ export async function collectSyllabus(client, { le, courseId, content, overview 
       }
     } catch (error) {
       if (!(error instanceof AccessError) || error.code === 'needs_login') throw error;
+      if (error.status === 429) throw error;
       record.outcome = ['denied', 'restricted'].includes(error.code) ? 'denied' : error.code === 'partial' ? 'partial' : 'failed';
       Object.assign(record, { complete: false, error: error.code, message: error.message, status: error.status, retryAfter: error.retryAfter });
       entry = { ...entry, outcome: record.outcome, error: error.code, message: error.message, textCharacters: 0 };
     }
     observations.push(record);
     catalog.push(entry);
+    if (entry.textStatus === 'available') {
+      for (const candidate of [descriptor.url, record.source]) if (candidate) {
+        try { resolved.set(new URL(candidate, client.origin).href.split('#')[0], entry.key); } catch {}
+      }
+    }
   };
 
   if (overview.outcome === 'not_configured') {
@@ -112,7 +120,7 @@ export async function collectSyllabus(client, { le, courseId, content, overview 
         const metadata = await client.get(topicPath);
         const value = descriptionContent(metadata.Description);
         const target = metadata.Url || descriptor.url;
-        // Resolve link metadata only. School credentials never accompany arbitrary links.
+        // Link targets are handled below with separate school/public trust boundaries.
         let linkStatus = 'unresolved';
         if (target) {
           try { apiUrl(client.origin, target); linkStatus = 'api_link_not_followed'; }
@@ -122,23 +130,58 @@ export async function collectSyllabus(client, { le, courseId, content, overview 
           }
         }
         return { ...value, format: 'link', metadata, links: target ? [...value.links, { url: target, label: descriptor.title, status: linkStatus }] : value.links,
-          textStatus: value.text ? 'available' : 'unresolved' };
+          textStatus: value.text ? 'available' : target && actionLink(target, client.origin) ? 'not_applicable' : 'unresolved' };
       });
     }
   }
-  limited ||= descriptors.length > 100;
+  // Breadth-first, deduplicated document links; never activate surveys or enrollment links.
+  const seen = new Set();
+  for (let index = 0; index < catalog.length && index < 200; index++) {
+    const entry = catalog[index];
+    for (const link of entry.links || []) {
+      if (actionLink(link.url, client.origin)) { link.status = 'not_content'; continue; }
+      let target;
+      try { target = new URL(link.url, entry.url ? new URL(entry.url, client.origin) : client.origin); target.hash = ''; }
+      catch { link.status = 'invalid'; continue; }
+      // Read source documents, not an unbounded crawl of their citations and site navigation.
+      if (target.origin !== client.origin && ((entry.linkDepth || 0) > 0 ||
+          (entry.format === 'pdf' && !/\.(?:pdf|docx|pptx|xlsx)$/i.test(target.pathname) && !syllabusTitle.test(link.label || '')))) {
+        link.status = 'reference';
+        continue;
+      }
+      if (resolved.has(target.href)) { link.status = 'read'; link.sourceKey = resolved.get(target.href); continue; }
+      if (seen.has(target.href)) { link.status = 'already_attempted'; continue; }
+      seen.add(target.href);
+      if ((entry.linkDepth || 0) >= 2 || documentReads >= 20) { limited = true; link.status = 'not_read_limit'; continue; }
+      documentReads++;
+      await source({ kind: 'linked_document', title: link.label || 'Linked course document', url: target.href,
+        parents: [...(entry.parents || []), entry.title].filter(Boolean), role: 'course_information',
+        source: target.href, linkDepth: (entry.linkDepth || 0) + 1 }, () => readLinkedDocument(client, target.href, { le, courseId, tree: content.data }));
+      const linked = catalog.at(-1);
+      link.status = linked.textStatus === 'available' ? 'read' : linked.error || linked.textStatus || linked.outcome;
+      link.sourceKey = linked.key;
+      if (link.status === 'read') resolved.set(target.href, linked.key);
+    }
+    if (entry.kind === 'linked_topic' && entry.textStatus === 'unresolved' && entry.links?.length &&
+        entry.links.every(link => ['read', 'not_content', 'reference'].includes(link.status))) {
+      entry.textStatus = 'linked';
+      const observation = observations.find(item => item.key === entry.key);
+      if (observation?.data) observation.data.textStatus = 'linked';
+    }
+  }
+  limited ||= descriptors.length > 100 || catalog.some(item => item.linksLimited);
   const readable = catalog.filter(item => item.textStatus === 'available' && item.textCharacters > 0);
   const explicit = readable.filter(item => item.role === 'explicit_syllabus');
   const discoveryComplete = content.complete === true && overview.complete === true && !limited;
-  const unreadLinkCount = catalog.reduce((sum, item) => sum + (item.links?.length || 0), 0);
-  const textCoverageComplete = discoveryComplete && !unreadLinkCount && catalog.every(item => item.outcome === 'available' && ['available', 'empty'].includes(item.textStatus));
+  const unreadLinkCount = catalog.reduce((sum, item) => sum + (item.links?.filter(link => !['read', 'not_content', 'reference'].includes(link.status)).length || 0), 0);
+  const textCoverageComplete = discoveryComplete && !unreadLinkCount && catalog.every(item => item.outcome === 'available' && ['available', 'empty', 'not_applicable', 'linked'].includes(item.textStatus));
   const summary = {
     result: explicit.length ? 'explicit_sources' : readable.length ? 'course_information' : 'unresolved',
     overview: overview.outcome === 'available' ? descriptionContent(overview.data?.Description).text ? 'readable' : 'empty' : overview.outcome,
     candidateCount: descriptors.length, readableSourceCount: readable.length, explicitSourceCount: explicit.length,
     textCharacters: readable.reduce((sum, item) => sum + item.textCharacters, 0),
     discoveryComplete, textCoverageComplete, limited, unreadLinkCount,
-    unresolvedSourceCount: catalog.filter(item => item.outcome !== 'available' || !['available', 'empty'].includes(item.textStatus)).length,
+    unresolvedSourceCount: catalog.filter(item => item.outcome !== 'available' || !['available', 'empty', 'not_applicable', 'linked'].includes(item.textStatus)).length,
     formats: [...new Set(readable.map(item => item.format))].sort(),
     retryAfter: Math.max(0, ...observations.filter(item => item.error === 'retry_wait').map(item => item.retryAfter || 60_000)),
   };
