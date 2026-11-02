@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>dd2l · Your coursework</title>
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#prompt">Skip to search</a>
+  <aside class="sidebar" aria-label="Main navigation">
+    <a class="brand" href="/" aria-label="dd2l home"><img src="/assets/logo.svg" alt="" width="30" height="30"></a>
+    <nav>
+      <button class="icon-button" id="new-chat" type="button" title="New search" aria-label="New search"><img src="/assets/new-chat.svg" alt="" width="16" height="16"></button>
+      <button class="icon-button" id="search-nav" type="button" title="Search coursework" aria-label="Search coursework"><img src="/assets/search.svg" alt="" width="16" height="16"></button>
+      <button class="icon-button" id="courses-nav" type="button" title="Courses" aria-label="Courses"><img src="/assets/courses.svg" alt="" width="16" height="16"></button>
+    </nav>
+    <div class="utilities">
+      <button class="icon-button" id="settings-nav" type="button" title="Connection status" aria-label="Connection status"><img src="/assets/settings.svg" alt="" width="16" height="16"></button>
+      <button class="profile" id="profile" type="button" title="Local profile" aria-label="Local profile"><img src="/assets/avatar.svg" alt="" width="40" height="40"><span>U</span></button>
+    </div>
+  </aside>
+  <span id="demo-badge" class="demo-badge" hidden>Demo · sample coursework</span>
+  <main id="workspace" class="workspace">
+    <section class="home" aria-labelledby="heading">
+      <h1 id="heading">What are we looking for today?</h1>
+      <form id="search-form" class="composer" role="search">
+        <div class="prompt-field">
+          <label class="sr-only" for="prompt">Search your cached coursework</label>
+          <input id="prompt" name="q" type="search" maxlength="500" autocomplete="off" aria-describedby="search-help">
+          <button id="send" type="submit" disabled aria-label="Search"><img src="/assets/send.svg" alt="" width="32" height="32"></button>
+        </div>
+        <div class="composer-footer">
+          <label class="sr-only" for="course">Course</label>
+          <select id="course" name="course"><option value="">All courses</option></select>
+          <span id="busy" hidden>Searching…</span>
+        </div>
+        <span id="search-help" class="sr-only">Find source excerpts by keyword. This prototype does not generate AI answers.</span>
+      </form>
+      <p id="notice" class="notice" role="status" hidden></p>
+    </section>
+    <section id="results" class="results" aria-label="Coursework results" hidden>
+      <div class="results-heading"><h2 id="results-title" tabindex="-1">Sources</h2><span id="result-count"></span></div>
+      <p class="retrieval-note">Matching excerpts from your local inventory. These are source materials, not an AI-generated answer.</p>
+      <div id="result-list"></div>
+    </section>
+  </main>
+  <dialog id="panel" aria-labelledby="panel-title">
+    <header><h2 id="panel-title"></h2><button id="close-panel" type="button" aria-label="Close panel">×</button></header>
+    <div id="panel-body"></div>
+  </dialog>
+</body>
+</html>
