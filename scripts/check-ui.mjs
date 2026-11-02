@@ -12,7 +12,31 @@ try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 832 }, reducedMotion: 'reduce' });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
+  const gate = () => { let release; const promise = new Promise(resolve => { release = resolve; }); return { promise, release }; };
+  const initial = gate(), home = gate(), waits = new Map([
+    ['/api/status', initial], ['/api/courses', initial], ['/api/llm/status', initial], ['/api/home', home],
+  ]);
+  await page.route('**/api/**', async route => {
+    await waits.get(new URL(route.request().url()).pathname)?.promise;
+    await route.continue();
+  });
   await page.goto(`http://127.0.0.1:${server.address().port}`);
+  await page.locator('#course-loading .dot-loader').waitFor();
+  await page.locator('#model-loading .dot-loader').waitFor();
+  assert.equal(await page.locator('#course-loading .dot-loader > span').count(), 25);
+  assert.equal(await page.locator('#model-loading .dot-loader').getAttribute('role'), 'status');
+  assert.equal(await page.locator('#model-loading .dot-loader > span').first().evaluate(dot => getComputedStyle(dot).animationName), 'none');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const dotStyles = await page.locator('#model-loading .dot-loader > span').evaluateAll(dots => dots.map(dot => ({ name: getComputedStyle(dot).animationName, delay: getComputedStyle(dot).animationDelay })));
+  assert.ok(dotStyles.every(dot => dot.name === 'dot-origin-wave'));
+  assert.equal(dotStyles[6].delay, '0s');
+  assert.equal(dotStyles[24].delay, '1.44s');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  waits.delete('/api/status'); waits.delete('/api/courses'); waits.delete('/api/llm/status');
+  initial.release();
+  await page.locator('#widget-loading .dot-loader').waitFor();
+  assert.equal(await page.locator('#widget-loading .dot-loader > span').count(), 25);
+  waits.delete('/api/home'); home.release();
   await page.locator('#demo-badge').waitFor({ state: 'visible' });
   const assets = await page.locator('img').evaluateAll(images => images.map(img => ({ loaded: img.complete && img.naturalWidth > 0,
     width: img.getBoundingClientRect().width, height: img.getBoundingClientRect().height })));
@@ -31,6 +55,17 @@ try {
   assert.equal(await page.locator('#send').isDisabled(), true);
   await mkdir('.dd2l', { recursive: true });
   await page.locator('#widget-deadlines').waitFor();
+  const loaderLifetime = await page.evaluate(async () => {
+    const { startLoading } = await import('/loading.js');
+    const target = document.createElement('span'); target.setAttribute('aria-busy', 'false'); document.body.append(target);
+    const first = startLoading(target, 'First operation'), second = startLoading(target, 'Second operation');
+    const counts = [target.querySelectorAll('.dot-loader').length];
+    first(); first(); counts.push(target.querySelectorAll('.dot-loader').length);
+    second(); counts.push(target.querySelectorAll('.dot-loader').length);
+    const busy = target.getAttribute('aria-busy'); target.remove();
+    return { counts, busy };
+  });
+  assert.deepEqual(loaderLifetime, { counts: [1, 1, 0], busy: 'false' });
   assert.equal(await page.locator('.widget').count(), 3);
   assert.match(await page.locator('#widget-deadlines').textContent(), /Assignment 3/);
   assert.match(await page.locator('#widget-announcements').textContent(), /Midterm review/);
@@ -105,14 +140,25 @@ try {
   assert.match(await page.locator('#result-list').textContent(), /Assignment 3/);
   await page.locator('#new-chat').click();
   await page.screenshot({ path: '.dd2l/ui-customized.png' });
+  const searching = gate(); waits.set('/api/search', searching);
   await page.locator('#prompt').fill('recursion');
   await page.locator('#prompt').press('Enter');
+  await page.locator('#busy .dot-loader').waitFor();
+  assert.equal(await page.locator('#busy .dot-loader > span').count(), 25);
+  assert.equal(await page.locator('#search-form').getAttribute('aria-busy'), 'true');
+  assert.equal(await page.locator('#send img').isVisible(), false);
+  await page.screenshot({ path: '.dd2l/ui-dot-loading.png' });
+  waits.delete('/api/search'); searching.release();
   await page.locator('.source').waitFor();
+  assert.equal(await page.locator('#busy .dot-loader').count(), 0);
   assert.match(await page.locator('#result-list').textContent(), /Assignment 3/);
   assert.equal(await page.locator('.source a').count(), 0);
   await page.locator('#course').selectOption('102');
   await page.locator('.empty').waitFor();
+  const panelRead = gate(); waits.set('/api/courses', panelRead);
   await page.locator('#courses-nav').click();
+  await page.locator('#panel-loading .dot-loader').waitFor();
+  waits.delete('/api/courses'); panelRead.release();
   await page.locator('.course-item').last().click();
   await page.locator('.source').first().waitFor();
   assert.match(await page.locator('#result-list').textContent(), /Memory/);
@@ -151,17 +197,32 @@ try {
   await page.locator('#prompt').press('Enter');
   await page.getByText('Inventory unavailable. Try again.', { exact: true }).waitFor();
   assert.equal(await page.locator('#send').isEnabled(), true);
+  assert.equal(await page.locator('#busy .dot-loader').count(), 0);
   await page.unroute('**/api/search?**');
   // Mock only the provider boundary; exercise mode selection and explicit submission.
   await page.route('**/api/llm/status', route => route.fulfill({ json: { active: 'account', accounts: [{ id: 'account', label: 'Student · workspace', connected: true }] } }));
   await page.route('**/api/llm/models', route => route.fulfill({ json: { models: [{ id: 'model', name: 'Available model' }] } }));
   let aiCalls = 0;
+  let answerText = '<script>untrusted</script> Recursion [1].';
+  let generatedView = { title: 'Your recursion workspace', answer: 'Use the cached assignment and lecture to plan your work [1].', sections: [
+    { type: 'checklist', title: 'Suggested study steps', items: [
+      { text: 'Review the recursion lecture before starting.', citations: [1] },
+      { text: 'Implement and test your recursive functions.', citations: [1] },
+    ] },
+    { type: 'cards', title: 'Keep within reach', cards: [
+      { title: 'Assignment 3 · Recursion', text: 'Submit a Python file and a short explanation. <img src=x onerror=alert(1)>', citations: [1] },
+    ] },
+    { type: 'comparison', title: 'Submission requirements', columns: ['Deliverable', 'What to include'], rows: [
+      { cells: ['Python file', 'Implemented and tested recursive functions'], citations: [1] },
+      { cells: ['Explanation', 'A short explanation submitted through onQ'], citations: [1] },
+    ] },
+  ] };
   await page.route('**/api/llm/answer', async route => {
     aiCalls++;
     const body = route.request().postDataJSON();
     assert.equal(body.consent, true);
     assert.equal(body.model, 'model');
-    await route.fulfill({ json: { answer: '<script>untrusted</script> Recursion [1].', sources: [{ title: 'Assignment', courseName: 'Course', excerpt: 'Use recursion.', stale: true, url: 'https://onq.queensu.ca/d2l/home/101' }] } });
+    await route.fulfill({ json: { answer: answerText, view: generatedView, sources: [{ title: 'Assignment 3 · Recursion', courseName: 'CISC 121 · Introduction to Computing', excerpt: 'Implement and test recursive functions. Submit a Python file and a short explanation through onQ.', lastSuccess: '2026-11-02T14:00:00.000Z', stale: true, url: 'https://onq.queensu.ca/d2l/home/101' }] } });
   });
   await page.reload();
   await page.locator('#model option[value="model"]').waitFor({ state: 'attached' });
@@ -183,7 +244,35 @@ try {
   assert.match(await page.locator('#answer-text').textContent(), /<script>/);
   assert.match(await page.locator('#answer-sources').textContent(), /\[1\].*Assignment/);
   assert.equal(await page.locator('#send').isEnabled(), true);
+  assert.equal(await page.locator('.generated-card').count(), 3);
+  assert.equal(await page.locator('#answer-view script, #answer-view img').count(), 0);
+  await page.locator('.answer-checklist input').first().check();
+  assert.match(await page.locator('.answer-progress').textContent(), /1 of 2 complete/);
+  assert.equal(await page.locator('.answer-checklist .completed').count(), 1);
+  assert.equal(await page.locator('.answer-table-scroll thead th').count(), 3);
+  assert.match(await page.locator('.answer-source-cards').textContent(), /<img/);
+  assert.match(await page.locator('.answer-references').first().textContent(), /Stale cache/);
+  await page.locator('.answer-references a').first().click();
+  assert.match(page.url(), /#answer-source-1$/);
+  answerText = generatedView.answer;
+  generatedView.sections[1].cards[0].text = 'Submit a Python file and a short explanation through onQ.';
+  await page.locator('#send').click();
+  await page.getByText(answerText, { exact: true }).waitFor();
+  assert.match(await page.locator('.answer-progress').textContent(), /0 of 2 complete/);
+  await page.locator('#ai-answer-title').scrollIntoViewIfNeeded();
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.screenshot({ path: '.dd2l/ui-generated-mobile.png', fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 832 });
+  await page.screenshot({ path: '.dd2l/ui-generated-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  generatedView = { title: 'Invalid layout', answer: 'Text fallback.', sections: [
+    { type: 'checklist', title: 'Invalid evidence', items: [{ text: 'Unsupported claim', citations: [99] }] },
+  ] };
+  await page.locator('#prompt').fill('another question');
+  await page.locator('#send').click();
+  await page.locator('#ai-answer').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('#answer-view').isVisible(), false);
+  assert.equal(await page.locator('#answer-text').textContent(), answerText);
   await page.locator('#prompt').fill('memory');
   assert.equal(await page.locator('#ai-answer').isVisible(), false);
   let releaseAnswer, markStarted, markFinished;
@@ -200,20 +289,30 @@ try {
   await page.locator('#prompt').press('Enter');
   await started;
   assert.equal(await page.locator('#send').isDisabled(), true);
+  assert.equal(await page.locator('#busy .dot-loader > span').count(), 25);
   await page.locator('#model').selectOption('');
+  assert.equal(await page.locator('#busy .dot-loader').count(), 0);
   assert.equal(await page.locator('#send').isEnabled(), true);
   releaseAnswer();
   await finished;
   assert.equal(await page.locator('#ai-answer').isVisible(), false);
   await page.locator('#prompt').press('Enter');
   await page.locator('#result-list .source').first().waitFor();
-  assert.equal(aiCalls, 2);
+  assert.equal(aiCalls, 4);
   assert.equal(await page.locator('#model-sharing').isVisible(), false);
   await page.locator('#new-chat').click();
   await page.screenshot({ path: '.dd2l/ui-local-search-mobile.png' });
   await page.locator('#settings-nav').click();
   await page.getByRole('button', { name: 'Continue with ChatGPT', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Sign out of active ChatGPT account' }).waitFor();
+  const accountChange = gate();
+  await page.route('**/api/llm/select', async route => { await accountChange.promise; await route.fulfill({ json: {} }); });
+  await page.getByRole('button', { name: 'Use this account', exact: true }).click();
+  await page.locator('.account-action .dot-loader').waitFor();
+  assert.equal(await page.locator('.account-action .dot-loader > span').count(), 25);
+  accountChange.release();
+  await page.getByRole('button', { name: 'Use this account', exact: true }).waitFor();
+  await page.locator('#panel-loading .dot-loader').waitFor({ state: 'hidden' });
   callbackServer = createUiServer({ llm: { callback: async params => {
     if (params.get('state') === 'failed') throw new Error('Sign-in failed');
     return { first: params.get('state') === 'first' };
@@ -239,7 +338,7 @@ try {
   await page.locator('.auth-return').click();
   await page.locator('#workspace').waitFor();
   assert.deepEqual(errors, []);
-  console.log('UI smoke passed: live widget drag, edge/corner resize, blocked drops, cancellation, persistence, keyboard/touch input, mobile layout, search, AI consent and account controls.');
+  console.log('UI smoke passed: Origin Wave loading states, reduced motion, completion/error/cancel cleanup, widgets, generated answers, citations and responsive layouts.');
 } finally {
   await browser?.close();
   if (callbackServer) await new Promise(resolve => callbackServer.close(resolve));

@@ -1,4 +1,5 @@
 import { defaults, fits, firstSpace, restore, sizes } from './widget-layout.js';
+import { startLoading } from './loading.js';
 
 const $ = id => document.getElementById(id);
 const names = { deadlines: 'Upcoming deadlines', announcements: 'Class announcements', shortcuts: 'Your shortcuts' };
@@ -230,6 +231,7 @@ export function createWidgets(browse) {
     layout.push(widget); save(); render();
   }));
   return async function refresh() {
+    const finish = startLoading($('widget-loading'), 'Refreshing coursework widgets');
     $('refresh-widgets').disabled = true;
     try {
       const response = await fetch('/api/home');
@@ -245,6 +247,6 @@ export function createWidgets(browse) {
       }
       data = next; render(); message('Widgets updated from the local cache.');
     } catch (error) { message(error.message); }
-    finally { $('refresh-widgets').disabled = false; }
+    finally { finish(); $('refresh-widgets').disabled = false; }
   };
 }

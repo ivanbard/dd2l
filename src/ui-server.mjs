@@ -105,7 +105,7 @@ export function createUiServer({ demo = false, inventoryPath = join(process.env.
         return;
       }
       const path = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-      if (!/^(?:index\.html|app\.js|widgets\.js|widget-layout\.js|style\.css|assets\/[a-z-]+\.(?:svg|png))$/.test(path)) { send(404, { error: 'Not found.' }); return; }
+      if (!/^(?:index\.html|app\.js|widgets\.js|widget-layout\.js|answer-view\.js|answer-renderer\.js|loading\.js|style\.css|assets\/[a-z-]+\.(?:svg|png))$/.test(path)) { send(404, { error: 'Not found.' }); return; }
       send(200, await readFile(join(root, path)), mime[extname(path)]);
     } catch (error) {
       send(error.code === 'ENOENT' ? 404 : 503, { error: error.public ? error.message : error.code === 'ENOENT' ? 'Not found.' : 'Local data or AI service is unavailable. Retry after the current operation finishes.' });

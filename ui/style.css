@@ -30,14 +30,21 @@ h1 { font-size: 24px; line-height: 29px; font-weight: 400; text-align: center; m
 input { min-width: 0; width: 100%; border: 0; outline: none; color: #fff; background: transparent; font-size: 16px; }
 input:focus-visible { outline: none; }
 input::-webkit-search-cancel-button { display: none; }
-#send { flex: 0 0 32px; height: 32px; border: 0; padding: 0; background: transparent; border-radius: 50%; transition: filter .15s ease, transform .15s ease; }
+#send { display: grid; place-items: center; flex: 0 0 32px; height: 32px; border: 0; padding: 0; background: transparent; border-radius: 50%; transition: filter .15s ease, transform .15s ease; }
 #send img { display: block; }
+.composer[aria-busy=true] #send img { display: none; }
 #send:not(:disabled) { filter: brightness(2); }
 #send:not(:disabled):hover { transform: translateY(-1px); filter: brightness(2.6); }
 .composer-footer { position: relative; display: flex; align-items: center; gap: 4px; margin-top: 12px; height: 32px; }
 .composer-footer select { min-width: 0; max-width: 55%; }
 .composer-footer #model { margin-left: auto; max-width: 45%; }
-.composer-footer #busy { position: absolute; top: 35px; right: 0; }
+.loading-slot:empty { display: none; }
+.loading-slot { display: inline-flex; vertical-align: middle; flex-shrink: 0; }
+.dot-loader { display: inline-grid; grid-template-columns: repeat(5, 3px); grid-template-rows: repeat(5, 3px); gap: 2.25px; width: 24px; height: 24px; flex: 0 0 24px; vertical-align: middle; color: inherit; }
+.dot-loader > span { width: 3px; height: 3px; border-radius: 50%; background: currentColor; opacity: .24; animation: dot-origin-wave 1500ms ease-in-out infinite; animation-delay: calc(var(--ring) * 240ms); will-change: opacity; }
+@keyframes dot-origin-wave { 0%, 100% { opacity: .1; } 34% { opacity: 1; } 60% { opacity: .24; } }
+#panel-loading { margin-left: auto; margin-right: 12px; }
+.account-action[aria-busy=true] { display: flex; align-items: center; gap: 12px; }
 select { appearance: none; field-sizing: content; max-width: min(350px, 85%); padding: 8px 30px 8px 12px; border: 0; border-radius: 8px; font-size: 13px; line-height: 16px; background: transparent url('/assets/chevron.svg') right 10px center / 14px 14px no-repeat; color: #bababa; cursor: pointer; text-overflow: ellipsis; }
 select:hover { background-color: #ffffff08; }
 option { background: #292929; color: white; }
@@ -157,6 +164,41 @@ code { background: #1a1a1a; border-radius: 4px; padding: 3px 6px; font-size: 12p
 .size-wide { grid-column-end: span 2; grid-row-end: span 1; }
 .size-large { grid-column-end: span 2; grid-row-end: span 2; }
 .size-full { grid-column-end: span 4; grid-row-end: span 2; }
+#ai-answer { max-width: 1000px; }
+#ai-answer-title { font-size: 28px; font-weight: 700; letter-spacing: -.7px; overflow-wrap: anywhere; }
+#answer-text { max-width: 720px; }
+.answer-view { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 16px; margin: 28px 0 40px; }
+.widget.generated-card { min-height: 0; max-height: none; padding: 24px; }
+.generated-card::after { content: ''; pointer-events: none; position: absolute; z-index: -1; right: -20px; top: 0; width: 180px; height: 180px; background: url('/assets/widget-announcements.svg') center / contain no-repeat; opacity: .07; }
+.generated-card.answer-checklist::after { background-image: url('/assets/widget-shortcuts.svg'); }
+.generated-card .widget-edition { margin-bottom: 28px; }
+.generated-card .widget-header { margin: 0 0 14px; }
+.generated-card h3 { font-size: 23px; line-height: 1.2; overflow-wrap: anywhere; }
+.generated-card p, .generated-card li { font-size: 14px; color: #d0d1ce; line-height: 1.65; overflow-wrap: anywhere; }
+.answer-progress, .answer-session-note { color: #aaa; font: 11px / 1.5 ui-monospace, monospace; }
+.answer-checklist { list-style: none; margin: 4px 0 20px; padding: 0; }
+.answer-checklist li { border-top: 1px solid #ffffff12; padding: 16px 0; }
+.answer-checklist label { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; }
+.answer-checklist input { appearance: auto; flex: 0 0 18px; width: 18px; height: 18px; margin: 3px 0 0; accent-color: #a7d7e5; }
+.answer-checklist input:focus-visible { outline: 2px solid #a7d7e5; outline-offset: 4px; }
+.answer-checklist .completed label span { text-decoration: line-through; color: #888; }
+.answer-references { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.answer-references a { color: #b1d9e8; font: 10px / 1.5 ui-monospace, monospace; text-decoration: none; padding: 3px 6px; border: 1px solid #ffffff1a; border-radius: 3px; }
+.answer-references a:hover { background: #ffffff09; text-decoration: underline; }
+.answer-checklist .answer-references { margin-left: 30px; }
+.answer-comparison { grid-column: 1 / -1; }
+.answer-table-scroll { overflow-x: auto; }
+.answer-table-scroll table { border-collapse: collapse; width: 100%; min-width: 420px; text-align: left; color: #d0d1ce; font-size: 13px; }
+.answer-table-scroll th, .answer-table-scroll td { padding: 16px 12px; border-top: 1px solid #ffffff16; vertical-align: top; overflow-wrap: anywhere; max-width: 320px; white-space: pre-wrap; }
+.answer-table-scroll thead th { font: 10px / 1.5 ui-monospace, monospace; color: #aaa; }
+.answer-table-scroll tbody th { font-weight: 500; }
+.answer-table-scroll .answer-references { margin: 0; }
+.answer-source-cards > section { padding: 18px 0; border-top: 1px solid #ffffff12; }
+.answer-source-cards h4 { margin: 0 0 8px; font-size: 16px; letter-spacing: -.3px; }
+.answer-source-cards p { margin: 0; white-space: pre-wrap; }
+.answer-sources-heading { font: 11px / 1.5 ui-monospace, monospace; color: #aaa; margin: 32px 0 12px; }
+#answer-sources { max-width: 720px; }
+#answer-sources .source { scroll-margin-top: 24px; }
 @container (max-width: 300px) {
   .widget-mark { opacity: .17; width: 65%; }
   .widget-body { width: 100%; }
@@ -181,3 +223,4 @@ code { background: #1a1a1a; border-radius: 4px; padding: 3px 6px; font-size: 12p
   select { max-width: 90%; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+@media (prefers-reduced-motion: reduce) { .dot-loader > span { opacity: calc(.95 - var(--ring) * .125); will-change: auto; } }

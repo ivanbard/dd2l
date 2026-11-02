@@ -1,4 +1,6 @@
 import { createWidgets } from './widgets.js';
+import { renderAnswerView } from './answer-renderer.js';
+import { startLoading } from './loading.js';
 
 const $ = id => document.getElementById(id);
 const refreshWidgets = createWidgets(async (course, title) => {
@@ -11,6 +13,7 @@ let status;
 let courses = [];
 let request;
 let aiRequest;
+let finishPromptLoading = () => {};
 
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -34,18 +37,21 @@ async function aiAction(action, body = {}, signal) {
 }
 
 async function loadAI() {
-  clearAnswer();
-  $('model').replaceChildren(new Option('Local search', ''));
-  updateComposer();
-  const connection = await api('/api/llm/status');
-  if (connection.active) {
-    const { models } = await api('/api/llm/models');
-    const group = element('optgroup');
-    group.label = 'ChatGPT';
-    group.append(...models.map(m => new Option(m.name, m.id)));
-    $('model').append(group);
-  }
-  updateComposer();
+  const finish = startLoading($('model-loading'), 'Loading models');
+  try {
+    clearAnswer();
+    $('model').replaceChildren(new Option('Local search', ''));
+    updateComposer();
+    const connection = await api('/api/llm/status');
+    if (connection.active) {
+      const { models } = await api('/api/llm/models');
+      const group = element('optgroup');
+      group.label = 'ChatGPT';
+      group.append(...models.map(m => new Option(m.name, m.id)));
+      $('model').append(group);
+    }
+    updateComposer();
+  } finally { finish(); }
 }
 
 function updateComposer() {
@@ -57,8 +63,9 @@ function updateComposer() {
 }
 
 function setBusy(busy, label = 'Searching…') {
+  finishPromptLoading();
   $('busy').hidden = !busy;
-  $('busy').textContent = label;
+  if (busy) finishPromptLoading = startLoading($('busy'), label);
   if (busy) $('search-form').setAttribute('aria-busy', 'true');
   else $('search-form').removeAttribute('aria-busy');
   updateComposer();
@@ -71,6 +78,9 @@ function clearAnswer() {
   setBusy(false);
   $('ai-answer').hidden = true;
   $('answer-text').textContent = '';
+  $('answer-view').replaceChildren();
+  $('answer-view').hidden = true;
+  $('ai-answer-title').textContent = 'Your answer';
   $('answer-sources').replaceChildren();
 }
 
@@ -87,9 +97,15 @@ async function askAI() {
     if (aiRequest !== current) return;
     $('workspace').classList.add('has-results');
     $('answer-text').textContent = data.answer;
+    const rendered = renderAnswerView($('answer-view'), data.view, data.sources);
+    $('answer-view').hidden = !rendered || !data.view.sections.length;
+    $('ai-answer-title').textContent = rendered ? data.view.title || 'Your answer' : 'Your answer';
+    if (data.viewWarning) notice(data.viewWarning);
     $('answer-sources').replaceChildren();
     for (const [i, source] of data.sources.entries()) {
       const article = element('article', undefined, 'source');
+      article.id = `answer-source-${i + 1}`;
+      article.tabIndex = -1;
       article.append(element('h3', `[${i + 1}] ${source.title}`), element('p', source.excerpt),
         element('p', `${source.courseName} · ${source.stale ? 'Stale cache' : 'Cached'} · ${date(source.lastSuccess)}`, 'source-meta'));
       const link = element('a', 'Open course in onQ ↗');
@@ -120,12 +136,15 @@ function date(value) {
 }
 
 async function load() {
-  [status, { courses }] = await Promise.all([api('/api/status'), api('/api/courses')]);
-  const selected = $('course').value;
-  $('course').replaceChildren(new Option('All courses', ''), ...courses.map(course => new Option(course.name, course.id)));
-  if (courses.some(course => course.id === selected)) $('course').value = selected;
-  $('demo-badge').hidden = !status.demo;
-  if (!courses.length) notice('No cached courses yet. Run npm run login, then npm run audit -- --all. Or start with npm run ui -- --demo to explore sample coursework.');
+  const finish = startLoading($('course-loading'), 'Loading courses');
+  try {
+    [status, { courses }] = await Promise.all([api('/api/status'), api('/api/courses')]);
+    const selected = $('course').value;
+    $('course').replaceChildren(new Option('All courses', ''), ...courses.map(course => new Option(course.name, course.id)));
+    if (courses.some(course => course.id === selected)) $('course').value = selected;
+    $('demo-badge').hidden = !status.demo;
+    if (!courses.length) notice('No cached courses yet. Run npm run login, then npm run audit -- --all. Or start with npm run ui -- --demo to explore sample coursework.');
+  } finally { finish(); }
 }
 
 function reset() {
@@ -192,7 +211,7 @@ function openPanel(title) {
 
 async function showCourses() {
   openPanel('Courses');
-  $('panel-body').append(element('p', 'Loading cached courses…'));
+  const finish = startLoading($('panel-loading'), 'Loading cached courses');
   try {
     await load();
     $('panel-body').replaceChildren(element('p', 'Browse materials already collected from onQ.'));
@@ -210,11 +229,12 @@ async function showCourses() {
     }
     if (!courses.length) $('panel-body').append(element('p', 'No courses in the local inventory. Run npm run audit -- --all after signing in.'));
   } catch (error) { $('panel-body').replaceChildren(element('p', error.message)); }
+  finally { finish(); }
 }
 
 async function showStatus() {
   openPanel('Connection status');
-  $('panel-body').append(element('p', 'Reading local inventory…'));
+  const finish = startLoading($('panel-loading'), 'Loading connection status');
   try {
     await load();
     $('panel-body').replaceChildren(
@@ -234,8 +254,9 @@ async function showStatus() {
       button.type = 'button';
       button.addEventListener('click', async () => {
         button.disabled = true;
+        const finishAction = startLoading(button, `${label} in progress`);
         try { await handler(); } catch (error) { $('panel-body').append(element('p', error.message)); }
-        finally { button.disabled = false; }
+        finally { finishAction(); button.disabled = false; }
       });
       $('panel-body').append(button);
     };
@@ -259,6 +280,7 @@ async function showStatus() {
     usage.href = 'https://chatgpt.com/settings/usage'; usage.target = '_blank'; usage.rel = 'noopener noreferrer';
     $('panel-body').append(usage);
   } catch (error) { $('panel-body').replaceChildren(element('p', error.message)); }
+  finally { finish(); }
 }
 
 $('prompt').addEventListener('input', clearAnswer);

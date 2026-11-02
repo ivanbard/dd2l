@@ -87,10 +87,13 @@ test('refresh is serialized and atomically saves rotating credentials, with no A
 });
 
 test('answers use public Responses with no storage or tools and require completed streaming', async t => {
+  const view = { title: 'Recursion', answer: 'Use recursion [1].', sections: [
+    { type: 'checklist', title: 'Steps', items: [{ text: 'Review recursion.', citations: [1] }] },
+  ] };
   const { llm } = await fixture(t, async url => {
     if (url.endsWith('/oauth/token')) return Response.json(tokens);
     assert.equal(url, 'https://api.openai.com/v1/responses');
-    return stream(event({ type: 'response.output_text.delta', delta: 'Use recursion [1].' }) + event({ type: 'response.completed' }));
+    return stream(event({ type: 'response.output_text.delta', delta: JSON.stringify(view) }) + event({ type: 'response.completed' }));
   });
   await connect(llm);
   const original = llm.fetch;
@@ -99,9 +102,14 @@ test('answers use public Responses with no storage or tools and require complete
     assert.equal(body.store, false); assert.equal(body.stream, true);
     assert.equal(body.tools, undefined); assert.ok(Array.isArray(body.input));
     assert.match(body.instructions, /untrusted/);
+    assert.equal(body.text.format.type, 'json_schema');
+    assert.equal(body.text.format.strict, true);
+    assert.equal(body.text.format.schema.additionalProperties, false);
     return original(url, options);
   };
-  assert.equal((await llm.answer('How?', 'available', [{ title: 'Assignment', excerpt: 'Use recursion' }])).answer, 'Use recursion [1].');
+  assert.deepEqual(await llm.answer('How?', 'available', [{ title: 'Assignment', excerpt: 'Use recursion' }]), { answer: view.answer, view });
+  assert.match((await llm.answer('How?', 'available', [])).answer, /No matching/);
+  assert.equal(await responseText(stream(event({ type: 'response.refusal.delta', delta: 'I cannot help with that.' }) + event({ type: 'response.completed' }))), 'I cannot help with that.');
   for (const terminal of ['response.failed', 'response.incomplete', 'error']) {
     await assert.rejects(responseText(stream(event({ type: 'response.output_text.delta', delta: 'Partial' }) + event({ type: terminal }))), /could not complete/);
   }
