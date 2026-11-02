@@ -5,4 +5,5 @@ node_modules/
 *.dpapi
 .dd2l/
 coverage/
-/docs/
+/docs/*
+!/docs/README.md
