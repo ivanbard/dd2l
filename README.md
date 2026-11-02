@@ -43,7 +43,19 @@ npm run ui
 
 Open the printed [local URL](http://127.0.0.1:4173). The home screen implements the [Figma Home design](https://www.figma.com/design/ASr0dnwupPLbXmeT1AiPGg/dd2l?node-id=1-3): prompt, course selector, sidebar and profile. Search finds keyword matches in cached course materials and displays source excerpts with retrieval dates and stale-cache labels. Courses opens a material browser; Settings and Profile show connection status and refresh instructions. The source link opens the course in onQ using your normal browser sign-in.
 
-The UI reads the existing inventory without changing it or loading credentials. Run `npm run audit -- --all` or keep `npm run sync -- --all` running separately to collect data. Each search reads the current cache. Only courses confirmed accessible in cached enrollments are shown; unavailable material stays unavailable, and coverage is limited to what the connector has collected. There is no AI response service yet: natural-language input is matched by keywords, not interpreted as a question.
+Local search reads the existing inventory without changing it or loading school credentials. Run `npm run audit -- --all` or keep `npm run sync -- --all` running separately to collect data. Each search reads the current cache. Only courses confirmed accessible in cached enrollments are shown; unavailable material stays unavailable, and coverage is limited to what the connector has collected. Search matches keywords; the separate Ask ChatGPT action generates grounded answers.
+
+### Use your ChatGPT plan
+
+In the live UI, open Settings or Profile and choose **Continue with ChatGPT**. Complete registration and plan-use consent on OpenAI's website, then return to dd2l. No API key is needed. Select an available model, enter a question, check permission to send excerpts, and choose **Ask ChatGPT**. Ordinary Enter/Search remains local keyword retrieval.
+
+Each AI request sends the question and up to eight matching excerpts (at most 700 characters each), including titles, course names, retrieval dates and stale-cache labels, to OpenAI. The answer displays those sources with numbered references. The model is instructed to use only this evidence and report gaps; verify generated claims against the excerpts. Keyword retrieval can miss relevant material. No tool execution, Brightspace credentials, complete inventory upload, or persistent conversation history is provided. Permission resets after each request and when the question, course or model changes.
+
+This uses OpenAI's documented [local-app Sign in with ChatGPT flow](https://developers.openai.com/siwc/token-sharing-open-source), with PKCE, state/nonce and signed identity validation. A stable host ID and separate account registrations are saved under `%LOCALAPPDATA%\dd2l\llm\accounts.dpapi`, encrypted with Windows DPAPI. Refreshes are serialized across processes using a separate lock; the school sync can run alongside AI. Tokens stay on the server and never enter browser storage. `jose` handles JWT signature and claim verification. Remote Responses requests set `store: false` and `stream: true`; partial/failed streams do not become successful answers.
+
+Settings lists saved account/workspace registrations and supports switching, reauthorization and sign-out of the active account. Sign-out revokes its renewable session when possible and removes its local tokens; a failed remote revocation is reported. The non-secret registration and host ID remain for later sign-in. School CLI logout affects only school data; disconnect ChatGPT separately in the UI. Manage plan/app limits in [ChatGPT Settings → Usage](https://chatgpt.com/settings/usage). Usage shares the account's plan limits and may use credits according to settings you authorize there; dd2l never falls back to API-key billing. Eligibility, available models and limits are controlled by OpenAI.
+
+ChatGPT is the first supported subscription provider. There is no universal subscription login: other providers need separately verified authentication and plan-use support. Demo mode disables provider sign-in and AI requests and never loads AI credentials. Commercial or remotely hosted deployments need a separate access review against [OpenAI's integration requirements](https://developers.openai.com/siwc/request-client-id).
 
 For an isolated walkthrough with fictional data and no school login:
 
@@ -91,6 +103,6 @@ Syllabus content lives in individual `syllabus_source` resource rows; the `sylla
 
 An audit can complete successfully as a command while reporting `complete: false`: resource-level denials, unavailable routes, or partial collections remain visible. A successful collection read establishes coverage of that endpoint, not of every activity the website or an external tool may contain.
 
-Grounded AI prompt retrieval, private external-provider integrations and unattended Windows startup remain later milestones. See [the gap-resolution report](docs/gap-resolution.md) for implemented paths, live evidence and remaining access/verification limits.
+Improved semantic retrieval, additional model providers, private course-content provider integrations and unattended Windows startup remain later milestones. See [the gap-resolution report](docs/gap-resolution.md) for connector paths, live evidence and remaining access/verification limits.
 
 Do not commit credentials, session cookies, access tokens, downloaded coursework, grades, or classmates' personal information. Discovery evidence should contain access outcomes and field names rather than private payloads.

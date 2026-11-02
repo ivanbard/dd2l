@@ -6,6 +6,7 @@ import { createUiServer } from '../src/ui-server.mjs';
 const server = createUiServer({ demo: true });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 let browser;
+let callbackServer;
 try {
   browser = await chromium.launch({ channel: 'chrome', headless: true });
   const page = await browser.newPage({ viewport: { width: 1280, height: 832 } });
@@ -58,9 +59,65 @@ try {
   await page.locator('#prompt').press('Enter');
   await page.getByText('Inventory unavailable. Try again.', { exact: true }).waitFor();
   assert.equal(await page.locator('#send').isEnabled(), true);
+  // Mock only the provider boundary; keep UI rendering and consent behavior real.
+  await page.route('**/api/llm/status', route => route.fulfill({ json: { active: 'account', accounts: [{ id: 'account', label: 'Student · workspace', connected: true }] } }));
+  await page.route('**/api/llm/models', route => route.fulfill({ json: { models: [{ id: 'model', name: 'Available model' }] } }));
+  let aiCalls = 0;
+  await page.route('**/api/llm/answer', async route => {
+    aiCalls++;
+    const body = route.request().postDataJSON();
+    assert.equal(body.consent, true);
+    assert.equal(body.model, 'model');
+    await route.fulfill({ json: { answer: '<script>untrusted</script> Recursion [1].', sources: [{ title: 'Assignment', courseName: 'Course', excerpt: 'Use recursion.', stale: true, url: 'https://onq.queensu.ca/d2l/home/101' }] } });
+  });
+  await page.reload();
+  await page.locator('#ai-controls').waitFor({ state: 'visible' });
+  await page.locator('#model option').waitFor({ state: 'attached' });
+  await page.locator('#prompt').fill('recursion');
+  await page.locator('#ask-ai').click();
+  assert.equal(aiCalls, 0);
+  await page.locator('#ai-consent').check();
+  await page.locator('#ask-ai').click();
+  await page.locator('#ai-answer').waitFor({ state: 'visible' });
+  assert.equal(aiCalls, 1);
+  assert.equal(await page.locator('#answer-text script').count(), 0);
+  assert.match(await page.locator('#answer-text').textContent(), /<script>/);
+  assert.match(await page.locator('#answer-sources').textContent(), /\[1\].*Assignment/);
+  assert.equal(await page.locator('#ai-consent').isChecked(), false);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.locator('#prompt').fill('memory');
+  assert.equal(await page.locator('#ai-answer').isVisible(), false);
+  await page.locator('#settings-nav').click();
+  await page.getByRole('button', { name: 'Continue with ChatGPT', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Sign out of active ChatGPT account' }).waitFor();
+  callbackServer = createUiServer({ llm: { callback: async params => {
+    if (params.get('state') === 'failed') throw new Error('Sign-in failed');
+    return { first: params.get('state') === 'first' };
+  } } });
+  await new Promise(resolve => callbackServer.listen(0, '127.0.0.1', resolve));
+  const callbackOrigin = `http://127.0.0.1:${callbackServer.address().port}`;
+  for (const [state, heading] of [['first', "You're using your ChatGPT plan"], ['returning', 'ChatGPT connected'], ['failed', 'Sign-in did not complete']]) {
+    await page.goto(`${callbackOrigin}/auth/callback?state=${state}`);
+    assert.equal(await page.locator('h1').textContent(), heading);
+    assert.equal(await page.locator('body').evaluate(body => getComputedStyle(body).backgroundColor), 'rgba(0, 0, 0, 0)');
+    assert.equal(await page.locator('html').evaluate(html => getComputedStyle(html).backgroundColor), 'rgb(34, 34, 34)');
+    assert.ok(await page.locator('.auth-brand img').evaluate(img => img.complete && img.naturalWidth > 0));
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    assert.equal(await page.locator('.auth-return').evaluate(link => link === document.activeElement), true);
+    if (state === 'first') {
+      await page.screenshot({ path: '.dd2l/ui-auth-mobile.png' });
+      await page.setViewportSize({ width: 1280, height: 832 });
+      await page.screenshot({ path: '.dd2l/ui-auth.png' });
+    }
+  }
+  await page.locator('.auth-return').click();
+  await page.locator('#workspace').waitFor();
   assert.deepEqual(errors, []);
-  console.log('UI smoke passed: design geometry, local assets, search, filtering, course browsing, status, reset, mobile layout and recoverable errors.');
+  console.log('UI smoke passed: design geometry, search, course browsing, mobile layout, AI consent, safe answer rendering, source citations, account controls and recoverable errors.');
 } finally {
   await browser?.close();
+  if (callbackServer) await new Promise(resolve => callbackServer.close(resolve));
   await new Promise(resolve => server.close(resolve));
 }

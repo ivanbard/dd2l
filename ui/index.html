@@ -40,8 +40,15 @@
         </div>
         <span id="search-help" class="sr-only">Find source excerpts by keyword. This prototype does not generate AI answers.</span>
       </form>
+      <div id="ai-controls" class="ai-controls" hidden>
+        <label for="model">ChatGPT model</label><select id="model"></select>
+        <label><input id="ai-consent" type="checkbox"> Send my question and matching coursework excerpts to OpenAI for this answer.</label>
+        <button id="ask-ai" type="button">Ask ChatGPT</button>
+        <span>Using ChatGPT plan · <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">Manage usage</a></span>
+      </div>
       <p id="notice" class="notice" role="status" hidden></p>
     </section>
+    <section id="ai-answer" class="results" aria-label="ChatGPT answer" hidden><h2 tabindex="-1">ChatGPT answer</h2><p id="answer-text"></p><div id="answer-sources"></div></section>
     <section id="results" class="results" aria-label="Coursework results" hidden>
       <div class="results-heading"><h2 id="results-title" tabindex="-1">Sources</h2><span id="result-count"></span></div>
       <p class="retrieval-note">Matching excerpts from your local inventory. These are source materials, not an AI-generated answer.</p>

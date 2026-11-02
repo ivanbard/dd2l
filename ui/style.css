@@ -67,6 +67,23 @@ dialog header { display: flex; align-items: center; justify-content: space-betwe
 .course-item:hover { background: #ffffff06; }
 .course-item small { display: block; color: #999; }
 code { background: #1a1a1a; border-radius: 4px; padding: 3px 6px; font-size: 12px; }
+.ai-controls { display: grid; gap: 12px; margin: 24px 12px 0; color: #bbb; font-size: 13px; line-height: 1.6; }
+.ai-controls input { width: auto; margin-right: 8px; }
+.ai-controls select { max-width: 100%; }
+.ai-controls a, #panel-body a { color: #a7d7e5; }
+.ai-controls button, .account-action { border: 1px solid #555; background: #333; color: #eee; border-radius: 8px; padding: 10px 14px; }
+.account-action { display: block; margin: 12px 0; }
+#answer-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; color: #ddd; }
+.auth-page { min-height: 100svh; display: grid; place-items: center; padding: 40px 24px; }
+.auth-content { width: min(480px, 100%); }
+.auth-brand { display: inline-flex; align-items: center; gap: 12px; color: #eee; text-decoration: none; font-size: 20px; margin-bottom: 64px; }
+.auth-brand img { display: block; }
+.auth-status { color: #a7d7e5; font-size: 13px; margin: 0 0 16px; }
+.auth-content h1 { text-align: left; font-size: 32px; line-height: 1.2; letter-spacing: -.6px; margin: 0; }
+.auth-message { color: #bbb; font-size: 15px; line-height: 1.7; margin: 20px 0 32px; }
+.auth-return { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px 20px; border: 1px solid #555; border-radius: 12px; background: #303030; color: #eee; text-decoration: none; }
+.auth-return:hover { background: #383838; border-color: #777; }
+.auth-usage { display: inline-block; margin-top: 24px; color: #aaa; font-size: 13px; text-underline-offset: 4px; }
 @keyframes reveal { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 700px) {
   .workspace { padding: 29svh 20px 40px 80px; }
