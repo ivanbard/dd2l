@@ -4,7 +4,7 @@ export function demoInventory() {
   const stamp = '2026-11-02T14:00:00.000Z';
   const row = (category, course, data) => ({ key: `demo:${category}:${course}`, category, course,
     data, outcome: 'available', last_success: stamp, checked_at: stamp });
-  return projectInventory([
+  return { ...projectInventory([
     row('enrollments', null, [
       { OrgUnit: { Id: 101, Name: 'CISC 121 · Introduction to Computing' }, Access: { CanAccess: true, IsActive: true } },
       { OrgUnit: { Id: 102, Name: 'PSYC 100 · Principles of Psychology' }, Access: { CanAccess: true, IsActive: true } },
@@ -16,5 +16,5 @@ export function demoInventory() {
       { Title: 'Memory and retrieval', Description: { Text: 'Encoding, working memory, long-term memory, and retrieval practice. Read chapter 8 before the seminar.' } },
     ] }] }),
     row('announcements', '102', [{ Title: 'Midterm review session', Body: { Text: 'Bring your questions about memory and learning to the review session on Thursday.' } }]),
-  ], { state: 'demo', updatedAt: stamp });
+  ], { state: 'demo', updatedAt: stamp }), scope: 'demo' };
 }

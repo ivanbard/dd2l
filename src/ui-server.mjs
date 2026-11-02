@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { join, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { readInventory, searchInventory } from './ui-data.mjs';
+import { readInventory, searchInventory, homeInventory } from './ui-data.mjs';
 import { demoInventory } from './ui-demo.mjs';
 import { ChatGPT } from './llm.mjs';
 
@@ -90,7 +90,7 @@ export function createUiServer({ demo = false, inventoryPath = join(process.env.
       }
       if (req.method !== 'GET') { send(405, { error: 'This route is read-only.' }); return; }
       if (url.pathname.startsWith('/api/')) {
-        if (!['/api/status', '/api/courses', '/api/search'].includes(url.pathname)) { send(404, { error: 'Not found.' }); return; }
+        if (!['/api/status', '/api/courses', '/api/search', '/api/home'].includes(url.pathname)) { send(404, { error: 'Not found.' }); return; }
         const query = url.searchParams.get('q') || '';
         const course = url.searchParams.get('course') || '';
         if (query.length > 500 || (course && !/^\d+$/.test(course))) { send(400, { error: 'Use a query of at most 500 characters and a valid course.' }); return; }
@@ -99,12 +99,13 @@ export function createUiServer({ demo = false, inventoryPath = join(process.env.
         if (url.pathname === '/api/status') send(200, { demo, state: inventory.state,
           courseCount: inventory.courses.length, sourceCount: inventory.sources.length,
           lastSuccess: inventory.sources.map(source => source.lastSuccess).filter(Boolean).sort().at(-1) || null });
+        else if (url.pathname === '/api/home') send(200, { ...homeInventory(inventory), demo });
         else if (url.pathname === '/api/courses') send(200, { courses: inventory.courses });
         else send(200, { ...searchInventory(inventory, query, course), demo });
         return;
       }
       const path = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-      if (!/^(?:index\.html|app\.js|style\.css|assets\/[a-z-]+\.(?:svg|png))$/.test(path)) { send(404, { error: 'Not found.' }); return; }
+      if (!/^(?:index\.html|app\.js|widgets\.js|widget-layout\.js|style\.css|assets\/[a-z-]+\.(?:svg|png))$/.test(path)) { send(404, { error: 'Not found.' }); return; }
       send(200, await readFile(join(root, path)), mime[extname(path)]);
     } catch (error) {
       send(error.code === 'ENOENT' ? 404 : 503, { error: error.public ? error.message : error.code === 'ENOENT' ? 'Not found.' : 'Local data or AI service is unavailable. Retry after the current operation finishes.' });

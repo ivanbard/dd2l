@@ -45,6 +45,10 @@ Open the printed [local URL](http://127.0.0.1:4173). The home screen implements 
 
 Local search reads the existing inventory without changing it or loading school credentials. Run `npm run audit -- --all` or keep `npm run sync -- --all` running separately to collect data. Each search reads the current cache. Only courses confirmed accessible in cached enrollments are shown; unavailable material stays unavailable, and coverage is limited to what the connector has collected. Search matches keywords; the separate Ask ChatGPT action generates grounded answers.
 
+The homescreen includes upcoming deadlines, recent class announcements, and shortcuts to classes or cached materials. **Customize** enables a four-column, eight-row grid: drag a widget to move it live, or drag any edge or corner to resize it. A cell preview marks the proposed placement; overlapping or out-of-bounds drops return to the original position. Escape cancels the gesture. Focus a widget and use arrow keys to move or Shift + arrows to resize without a pointer. Remove widgets or add them back with **Add widget**. Narrow screens stack widgets normally and show a horizontally scrollable grid while customizing. **Pin shortcut** opens a searchable class/material picker; selecting a shortcut browses its cached sources. New search returns to the homescreen.
+
+Layouts and up to 20 shortcut references save in browser local storage, separately for each school account and demo mode. They do not sync across browsers or ports. Shortcut references include course-material titles and remain after CLI logout; clear this site's browser data to remove saved preferences. Inaccessible material is not rendered even if its reference remains pinned. **Refresh cache view** rereads the local inventory, without running a school sync. Deadlines require explicit due dates, announcements use publication dates when available, and stale cache entries remain labeled; an empty widget does not establish that onQ has no updates.
+
 ### Use your ChatGPT plan
 
 In the live UI, open Settings or Profile and choose **Continue with ChatGPT**. Complete registration and plan-use consent on OpenAI's website, then return to dd2l. No API key is needed. Select an available model, enter a question, check permission to send excerpts, and choose **Ask ChatGPT**. Ordinary Enter/Search remains local keyword retrieval.
@@ -65,7 +69,7 @@ npm run ui -- --demo
 
 Demo mode is visibly labeled and never reads the real inventory. Try `recursion`, `memory`, or `syllabus`, filter by course, or browse Courses. Use `--port 4174` to run another instance. The server binds only to `127.0.0.1`, rejects foreign browser origins, and serves private responses without caching. Stop it with Ctrl+C when finished.
 
-`npm test` covers retrieval, cache access and HTTP boundaries. `npm run ui:check` uses installed Chrome headlessly to check the home geometry, assets, core interactions, mobile overflow and error recovery; screenshots go in ignored `.dd2l/ui-*.png`. SF Pro uses the system font when available, with Segoe UI as the Windows fallback.
+`npm test` covers retrieval, cache access, widget layout validation, deadline/announcement projection and HTTP boundaries. `npm run ui:check` uses installed Chrome headlessly to check assets, core interactions, widget drag/move/resize/pin/removal and persistence, mobile overflow and error recovery; screenshots go in ignored `.dd2l/ui-*.png`. SF Pro uses the system font when available, with Segoe UI as the Windows fallback.
 
 ## What is collected
 

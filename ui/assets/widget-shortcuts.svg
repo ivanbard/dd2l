@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" fill="none">
+  <defs><pattern id="dots" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".9" fill="#c9c0ad"/></pattern></defs>
+  <path d="M40 99h81L39 181l35 35 82-82v81h49V50H40z" fill="url(#dots)"/>
+  <path d="M143 154h65l-66 66 28 28 66-66v65h39V115H143z" fill="url(#dots)" opacity=".4"/>
+</svg>

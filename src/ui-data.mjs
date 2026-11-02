@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { htmlContent } from './documents.mjs';
 import { SCHOOL } from './client.mjs';
+import { createHash } from 'node:crypto';
 
 const categories = new Set(['content', 'overview', 'syllabus_source', 'assignments', 'quizzes', 'announcements',
   'calendar', 'calendar_occurrences', 'content_file', 'assignment_file', 'linked_content', 'video_transcript']);
@@ -21,7 +22,7 @@ export function readInventory(path) {
     const rows = db.prepare(`SELECT key,course,category,data,last_success,checked_at,outcome
       FROM resources WHERE data IS NOT NULL AND outcome NOT IN ('denied','not_configured')`).all()
       .map(row => ({ ...row, data: JSON.parse(row.data) }));
-    return projectInventory(rows, state);
+    return { ...projectInventory(rows, state), scope: createHash('sha256').update(String(meta('account') || 'local')).digest('hex') };
   } catch (error) {
     if (error.code === 'ERR_SQLITE_ERROR' && /unable to open database/.test(error.message)) {
       return { courses: [], sources: [], state: null };
@@ -42,7 +43,9 @@ export function projectInventory(rows, state) {
     const visit = (value, parentTitle = '', depth = 0) => {
       if (!value || typeof value !== 'object' || depth > 15) return;
       if (Array.isArray(value)) { for (const item of value) visit(item, parentTitle, depth + 1); return; }
-      if (value.IsHidden || value.IsLocked || Date.parse(value.StartDateTime) > Date.now() || Date.parse(value.EndDateTime) < Date.now()) return;
+      if (value.IsHidden || value.IsLocked || value.IsDeleted || value.IsPublished === false ||
+        Date.parse(value.StartDateTime) > Date.now() || Date.parse(value.EndDateTime) < Date.now() ||
+        (row.category === 'announcements' && (Date.parse(value.StartDate) > Date.now() || Date.parse(value.EndDate) < Date.now()))) return;
       const title = String(value.Title || value.Name || value.Subject || value.title || parentTitle || row.category.replaceAll('_', ' '));
       const parts = [];
       const collect = (item, field, level = 0) => {
@@ -56,6 +59,8 @@ export function projectInventory(rows, state) {
       if (text) sources.push({ id: `${row.key}#${sources.length}`, course: String(row.course),
         courseName: allowed.get(String(row.course)).name, title, text, category: row.category,
         lastSuccess: row.last_success, checkedAt: row.checked_at, stale: row.outcome !== 'available',
+        dueDate: ['assignments', 'quizzes', 'calendar', 'calendar_occurrences'].includes(row.category) && Number.isFinite(Date.parse(value.DueDate)) ? value.DueDate : null,
+        publishedAt: row.category === 'announcements' ? value.PublishedDate || value.StartDate || null : null,
         url: `${SCHOOL}/d2l/home/${row.course}` });
       for (const [key, child] of Object.entries(value)) {
         if (!textFields.has(key) && child && typeof child === 'object') visit(child, title, depth + 1);
@@ -64,6 +69,15 @@ export function projectInventory(rows, state) {
     visit(row.data);
   }
   return { courses, sources, state };
+}
+
+export function homeInventory(inventory, now = Date.now()) {
+  const sources = inventory.sources.map(({ text, ...source }) => ({ ...source, excerpt: text.slice(0, 300),
+    ref: JSON.stringify([source.course, source.category, source.title]) }));
+  return { scope: inventory.scope || 'local-empty', courses: inventory.courses,
+    deadlines: sources.filter(source => Date.parse(source.dueDate) >= now).sort((a, b) => Date.parse(a.dueDate) - Date.parse(b.dueDate)),
+    announcements: sources.filter(source => source.category === 'announcements').sort((a, b) => (Date.parse(b.publishedAt) || 0) - (Date.parse(a.publishedAt) || 0)),
+    sources };
 }
 
 const stopWords = new Set('a an the what when where which who how are is was were do does did i my me we our you your for of to in on at and or about can could would should please find show tell looking today'.split(' '));

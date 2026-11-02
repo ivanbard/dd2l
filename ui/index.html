@@ -38,7 +38,7 @@
           <select id="course" name="course"><option value="">All courses</option></select>
           <span id="busy" hidden>Searching…</span>
         </div>
-        <span id="search-help" class="sr-only">Find source excerpts by keyword. This prototype does not generate AI answers.</span>
+        <span id="search-help" class="sr-only">Find source excerpts by keyword, or connect ChatGPT in Settings to ask a question.</span>
       </form>
       <div id="ai-controls" class="ai-controls" hidden>
         <label for="model">ChatGPT model</label><select id="model"></select>
@@ -47,6 +47,14 @@
         <span>Using ChatGPT plan · <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">Manage usage</a></span>
       </div>
       <p id="notice" class="notice" role="status" hidden></p>
+    </section>
+    <section id="home-widgets" class="home-widgets" aria-labelledby="widgets-heading">
+      <div class="widgets-heading"><div><p class="eyebrow">YOUR SPACE</p><h2 id="widgets-heading">At a glance</h2></div>
+        <div class="widget-actions"><button id="refresh-widgets" type="button">Refresh cache view</button><button id="add-widget" type="button" hidden>+ Add widget</button><button id="customize-widgets" type="button" aria-pressed="false">Customize</button></div>
+      </div>
+      <p id="widget-help" class="widget-help">Loading your coursework…</p>
+      <div id="widget-grid" class="widget-grid"></div>
+      <p id="widget-status" class="widget-status" role="status"></p>
     </section>
     <section id="ai-answer" class="results" aria-label="ChatGPT answer" hidden><h2 tabindex="-1">ChatGPT answer</h2><p id="answer-text"></p><div id="answer-sources"></div></section>
     <section id="results" class="results" aria-label="Coursework results" hidden>

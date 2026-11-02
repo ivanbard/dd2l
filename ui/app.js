@@ -1,4 +1,12 @@
+import { createWidgets } from './widgets.js';
+
 const $ = id => document.getElementById(id);
+const refreshWidgets = createWidgets(async (course, title) => {
+  try { await load(); } catch (error) { notice(error.message); return; }
+  $('course').value = course;
+  $('prompt').value = title;
+  search(!title);
+});
 let status;
 let courses = [];
 let request;
@@ -248,10 +256,11 @@ $('search-nav').addEventListener('click', () => $('prompt').focus());
 $('courses-nav').addEventListener('click', showCourses);
 $('settings-nav').addEventListener('click', showStatus);
 $('profile').addEventListener('click', showStatus);
+$('refresh-widgets').addEventListener('click', refreshWidgets);
 $('close-panel').addEventListener('click', () => $('panel').close());
 $('panel').addEventListener('click', event => { if (event.target === $('panel')) {
   const rect = $('panel').getBoundingClientRect();
   if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) $('panel').close();
 } });
-load().catch(error => notice(error.message));
+load().then(refreshWidgets).catch(error => notice(error.message));
 loadAI().catch(error => notice(error.message));

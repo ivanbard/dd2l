@@ -67,6 +67,13 @@ test('local HTTP boundary rejects foreign sites, writes, invalid input and file 
   assert.equal(status.headers.get('cache-control'), 'no-store');
   assert.match(status.headers.get('content-security-policy'), /frame-ancestors 'none'/);
   assert.equal((await get('/api/courses')).status, 200);
+  const home = await (await get('/api/home')).json();
+  assert.equal(home.demo, true);
+  assert.equal(home.scope, 'demo');
+  assert.equal(home.announcements[0].title, 'Midterm review session');
+  assert.ok(home.sources.every(source => !('text' in source)));
+  assert.equal((await get('/widgets.js')).status, 200);
+  assert.equal((await get('/widget-layout.js')).status, 200);
   assert.equal((await (await get('/api/search?q=recursion')).json()).total, 1);
   assert.equal((await get('/api/search?course=999')).status, 404);
   assert.equal((await get('/api/search?course=abc')).status, 400);
