@@ -2,6 +2,7 @@ const $ = id => document.getElementById(id);
 let status;
 let courses = [];
 let request;
+let aiRequest;
 
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -15,6 +16,68 @@ async function api(path, signal) {
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || 'Could not read the local inventory.');
   return data;
+}
+
+async function aiAction(action, body = {}, signal) {
+  const response = await fetch(`/api/llm/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'AI request failed.');
+  return data;
+}
+
+async function loadAI() {
+  const connection = await api('/api/llm/status');
+  $('ai-controls').hidden = !connection.active;
+  if (connection.active) {
+    const { models } = await api('/api/llm/models');
+    $('model').replaceChildren(...models.map(m => new Option(m.name, m.id)));
+  }
+}
+
+function clearAnswer() {
+  aiRequest?.abort();
+  $('ai-answer').hidden = true;
+  $('answer-text').textContent = '';
+  $('answer-sources').replaceChildren();
+  $('ai-consent').checked = false;
+}
+
+async function askAI() {
+  if (!$('prompt').value.trim()) { notice('Enter a coursework question first.'); return; }
+  if (!$('ai-consent').checked) { notice('Allow sending the question and excerpts to OpenAI before asking.'); return; }
+  aiRequest?.abort();
+  const current = aiRequest = new AbortController();
+  $('ask-ai').disabled = true;
+  $('ask-ai').textContent = 'Asking ChatGPT…';
+  $('ai-answer').hidden = true;
+  notice();
+  try {
+    const data = await aiAction('answer', { q: $('prompt').value.trim(), course: $('course').value, model: $('model').value, consent: true }, current.signal);
+    if (aiRequest !== current) return;
+    $('workspace').classList.add('has-results');
+    $('answer-text').textContent = data.answer;
+    $('answer-sources').replaceChildren();
+    for (const [i, source] of data.sources.entries()) {
+      const article = element('article', undefined, 'source');
+      article.append(element('h3', `[${i + 1}] ${source.title}`), element('p', source.excerpt),
+        element('p', `${source.courseName} · ${source.stale ? 'Stale cache' : 'Cached'} · ${date(source.lastSuccess)}`, 'source-meta'));
+      const link = element('a', 'Open course in onQ ↗');
+      link.href = source.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      article.append(link);
+      $('answer-sources').append(article);
+    }
+    $('ai-answer').hidden = false;
+    $('ai-answer').querySelector('h2').focus();
+  } catch (error) { if (error.name !== 'AbortError' && aiRequest === current) notice(error.message); }
+  finally {
+    if (aiRequest === current) {
+      $('ask-ai').disabled = false;
+      $('ask-ai').textContent = 'Ask ChatGPT';
+      $('ai-consent').checked = false;
+    }
+  }
 }
 
 function notice(text = '') {
@@ -37,6 +100,7 @@ async function load() {
 }
 
 function reset() {
+  clearAnswer();
   request?.abort();
   $('search-form').removeAttribute('aria-busy');
   $('busy').hidden = true;
@@ -49,6 +113,7 @@ function reset() {
 }
 
 async function search(browse = false) {
+  clearAnswer();
   const query = $('prompt').value.trim();
   if (!browse && !query) return;
   request?.abort();
@@ -130,19 +195,54 @@ async function showStatus() {
   try {
     await load();
     $('panel-body').replaceChildren(
-      element('p', status.demo ? 'Demo mode · fictional sample coursework. No school account is connected to this view.' : 'Local inventory · read-only. Your coursework stays on this computer.'),
+      element('p', status.demo ? 'Demo mode · fictional sample coursework. No school account is connected to this view.' : 'Local inventory · read-only. Search stays local. Ask ChatGPT sends selected excerpts only with your permission.'),
       element('p', `${status.courseCount} courses · ${status.sourceCount} searchable sources`),
       element('p', `Connector: ${status.state?.state || 'Not synced'} · Last successful source: ${date(status.lastSuccess)}`),
-      element('p', 'Search uses keywords and cached excerpts. AI answers are not connected in this iteration. Missing sources and access restrictions mean coverage may be incomplete.'),
+      element('p', 'Search uses keywords and cached excerpts. Missing sources and access restrictions mean coverage may be incomplete.'),
       element('p', 'To refresh coursework, run:'), element('code', 'npm run audit -- --all'),
       element('p', 'If sign-in has expired, run npm run login first. Use npm run sync -- --all for ongoing collection. Reopen Courses or search again to read the latest cache.'),
     );
+    const connection = await api('/api/llm/status');
+    $('panel-body').append(element('h3', 'Use your ChatGPT plan'));
+    if (connection.disabled) { $('panel-body').append(element('p', 'Provider sign-in is disabled in demo mode. Start the live UI to connect ChatGPT.')); return; }
+    $('panel-body').append(element('p', 'Eligible answers use your ChatGPT plan and its usage limits. dd2l does not automatically switch to an API key. You approve sending coursework for each answer.'));
+    const action = (label, handler) => {
+      const button = element('button', label, 'account-action');
+      button.type = 'button';
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        try { await handler(); } catch (error) { $('panel-body').append(element('p', error.message)); }
+        finally { button.disabled = false; }
+      });
+      $('panel-body').append(button);
+    };
+    for (const account of connection.accounts) {
+      $('panel-body').append(element('p', `${account.label}${account.id === connection.active ? ' · Active' : ''}`));
+      action(account.connected ? 'Use this account' : 'Continue with ChatGPT', async () => {
+        if (account.connected) { clearAnswer(); await aiAction('select', { id: account.id }); await loadAI(); await showStatus(); }
+        else location.assign((await aiAction('login', { id: account.id })).url);
+      });
+      if (account.connected) action('Sign in again to this account', async () => location.assign((await aiAction('login', { id: account.id })).url));
+    }
+    action('Continue with ChatGPT', async () => location.assign((await aiAction('login')).url));
+    if (connection.active) action('Sign out of active ChatGPT account', async () => {
+      clearAnswer();
+      const result = await aiAction('logout');
+      await loadAI();
+      await showStatus();
+      $('panel-body').append(element('p', result.message));
+    });
+    const usage = element('a', 'Manage usage in ChatGPT');
+    usage.href = 'https://chatgpt.com/settings/usage'; usage.target = '_blank'; usage.rel = 'noopener noreferrer';
+    $('panel-body').append(usage);
   } catch (error) { $('panel-body').replaceChildren(element('p', error.message)); }
 }
 
-$('prompt').addEventListener('input', () => { $('send').disabled = !$('prompt').value.trim() || !$('busy').hidden; });
+$('prompt').addEventListener('input', () => { clearAnswer(); $('send').disabled = !$('prompt').value.trim() || !$('busy').hidden; });
+$('ask-ai').addEventListener('click', askAI);
+$('model').addEventListener('change', clearAnswer);
 $('search-form').addEventListener('submit', event => { event.preventDefault(); search(); });
-$('course').addEventListener('change', () => { if (!$('results').hidden || !$('busy').hidden) search(!$('prompt').value.trim()); });
+$('course').addEventListener('change', () => { clearAnswer(); if (!$('results').hidden || !$('busy').hidden) search(!$('prompt').value.trim()); });
 $('new-chat').addEventListener('click', reset);
 $('search-nav').addEventListener('click', () => $('prompt').focus());
 $('courses-nav').addEventListener('click', showCourses);
@@ -154,3 +254,4 @@ $('panel').addEventListener('click', event => { if (event.target === $('panel'))
   if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) $('panel').close();
 } });
 load().catch(error => notice(error.message));
+loadAI().catch(error => notice(error.message));
