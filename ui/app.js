@@ -34,30 +34,53 @@ async function aiAction(action, body = {}, signal) {
 }
 
 async function loadAI() {
+  clearAnswer();
+  $('model').replaceChildren(new Option('Local search', ''));
+  updateComposer();
   const connection = await api('/api/llm/status');
-  $('ai-controls').hidden = !connection.active;
   if (connection.active) {
     const { models } = await api('/api/llm/models');
-    $('model').replaceChildren(...models.map(m => new Option(m.name, m.id)));
+    const group = element('optgroup');
+    group.label = 'ChatGPT';
+    group.append(...models.map(m => new Option(m.name, m.id)));
+    $('model').append(group);
   }
+  updateComposer();
+}
+
+function updateComposer() {
+  const model = $('model').value;
+  $('model-sharing').hidden = !model;
+  $('model').setAttribute('aria-describedby', model ? 'model-sharing' : 'search-help');
+  $('send').disabled = !$('prompt').value.trim() || !$('busy').hidden;
+  $('send').setAttribute('aria-label', model ? `Ask ${$('model').selectedOptions[0].textContent}` : 'Search locally');
+}
+
+function setBusy(busy, label = 'Searching…') {
+  $('busy').hidden = !busy;
+  $('busy').textContent = label;
+  if (busy) $('search-form').setAttribute('aria-busy', 'true');
+  else $('search-form').removeAttribute('aria-busy');
+  updateComposer();
 }
 
 function clearAnswer() {
   aiRequest?.abort();
+  request?.abort();
+  aiRequest = request = undefined;
+  setBusy(false);
   $('ai-answer').hidden = true;
   $('answer-text').textContent = '';
   $('answer-sources').replaceChildren();
-  $('ai-consent').checked = false;
 }
 
 async function askAI() {
   if (!$('prompt').value.trim()) { notice('Enter a coursework question first.'); return; }
-  if (!$('ai-consent').checked) { notice('Allow sending the question and excerpts to OpenAI before asking.'); return; }
-  aiRequest?.abort();
+  if (!$('model').value) return search();
+  clearAnswer();
   const current = aiRequest = new AbortController();
-  $('ask-ai').disabled = true;
-  $('ask-ai').textContent = 'Asking ChatGPT…';
-  $('ai-answer').hidden = true;
+  setBusy(true, 'Thinking…');
+  $('results').hidden = true;
   notice();
   try {
     const data = await aiAction('answer', { q: $('prompt').value.trim(), course: $('course').value, model: $('model').value, consent: true }, current.signal);
@@ -81,9 +104,7 @@ async function askAI() {
   } catch (error) { if (error.name !== 'AbortError' && aiRequest === current) notice(error.message); }
   finally {
     if (aiRequest === current) {
-      $('ask-ai').disabled = false;
-      $('ask-ai').textContent = 'Ask ChatGPT';
-      $('ai-consent').checked = false;
+      setBusy(false);
     }
   }
 }
@@ -109,11 +130,9 @@ async function load() {
 
 function reset() {
   clearAnswer();
-  request?.abort();
-  $('search-form').removeAttribute('aria-busy');
-  $('busy').hidden = true;
   $('prompt').value = '';
-  $('send').disabled = true;
+  $('model').value = '';
+  updateComposer();
   $('results').hidden = true;
   $('result-list').replaceChildren();
   $('workspace').classList.remove('has-results');
@@ -126,9 +145,7 @@ async function search(browse = false) {
   if (!browse && !query) return;
   request?.abort();
   const current = request = new AbortController();
-  $('send').disabled = true;
-  $('busy').hidden = false;
-  $('search-form').setAttribute('aria-busy', 'true');
+  setBusy(true);
   notice();
   try {
     const data = await api(`/api/search?${new URLSearchParams({ q: browse ? '' : query, course: $('course').value })}`, current.signal);
@@ -162,9 +179,7 @@ async function search(browse = false) {
     }
   } finally {
     if (request === current) {
-      $('busy').hidden = true;
-      $('search-form').removeAttribute('aria-busy');
-      $('send').disabled = !$('prompt').value.trim();
+      setBusy(false);
     }
   }
 }
@@ -203,7 +218,7 @@ async function showStatus() {
   try {
     await load();
     $('panel-body').replaceChildren(
-      element('p', status.demo ? 'Demo mode · fictional sample coursework. No school account is connected to this view.' : 'Local inventory · read-only. Search stays local. Ask ChatGPT sends selected excerpts only with your permission.'),
+      element('p', status.demo ? 'Demo mode · fictional sample coursework. No school account is connected to this view.' : 'Local inventory · read-only. Local search stays on this device. Selecting a ChatGPT model and sending a question shares matching coursework with OpenAI.'),
       element('p', `${status.courseCount} courses · ${status.sourceCount} searchable sources`),
       element('p', `Connector: ${status.state?.state || 'Not synced'} · Last successful source: ${date(status.lastSuccess)}`),
       element('p', 'Search uses keywords and cached excerpts. Missing sources and access restrictions mean coverage may be incomplete.'),
@@ -213,7 +228,7 @@ async function showStatus() {
     const connection = await api('/api/llm/status');
     $('panel-body').append(element('h3', 'Use your ChatGPT plan'));
     if (connection.disabled) { $('panel-body').append(element('p', 'Provider sign-in is disabled in demo mode. Start the live UI to connect ChatGPT.')); return; }
-    $('panel-body').append(element('p', 'Eligible answers use your ChatGPT plan and its usage limits. dd2l does not automatically switch to an API key. You approve sending coursework for each answer.'));
+    $('panel-body').append(element('p', 'Eligible answers use your ChatGPT plan and its usage limits. dd2l does not automatically switch to an API key. Select a model and send a question to share matching coursework for that answer.'));
     const action = (label, handler) => {
       const button = element('button', label, 'account-action');
       button.type = 'button';
@@ -246,11 +261,10 @@ async function showStatus() {
   } catch (error) { $('panel-body').replaceChildren(element('p', error.message)); }
 }
 
-$('prompt').addEventListener('input', () => { clearAnswer(); $('send').disabled = !$('prompt').value.trim() || !$('busy').hidden; });
-$('ask-ai').addEventListener('click', askAI);
-$('model').addEventListener('change', clearAnswer);
-$('search-form').addEventListener('submit', event => { event.preventDefault(); search(); });
-$('course').addEventListener('change', () => { clearAnswer(); if (!$('results').hidden || !$('busy').hidden) search(!$('prompt').value.trim()); });
+$('prompt').addEventListener('input', clearAnswer);
+$('model').addEventListener('change', () => { clearAnswer(); notice(); });
+$('search-form').addEventListener('submit', event => { event.preventDefault(); if ($('model').value) askAI(); else search(); });
+$('course').addEventListener('change', () => { const browsing = !$('results').hidden || !$('busy').hidden; clearAnswer(); if (browsing && !$('model').value) search(!$('prompt').value.trim()); });
 $('new-chat').addEventListener('click', reset);
 $('search-nav').addEventListener('click', () => $('prompt').focus());
 $('courses-nav').addEventListener('click', showCourses);

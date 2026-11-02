@@ -151,7 +151,8 @@ try {
   await page.locator('#prompt').press('Enter');
   await page.getByText('Inventory unavailable. Try again.', { exact: true }).waitFor();
   assert.equal(await page.locator('#send').isEnabled(), true);
-  // Mock only the provider boundary; keep UI rendering and consent behavior real.
+  await page.unroute('**/api/search?**');
+  // Mock only the provider boundary; exercise mode selection and explicit submission.
   await page.route('**/api/llm/status', route => route.fulfill({ json: { active: 'account', accounts: [{ id: 'account', label: 'Student · workspace', connected: true }] } }));
   await page.route('**/api/llm/models', route => route.fulfill({ json: { models: [{ id: 'model', name: 'Available model' }] } }));
   let aiCalls = 0;
@@ -163,22 +164,53 @@ try {
     await route.fulfill({ json: { answer: '<script>untrusted</script> Recursion [1].', sources: [{ title: 'Assignment', courseName: 'Course', excerpt: 'Use recursion.', stale: true, url: 'https://onq.queensu.ca/d2l/home/101' }] } });
   });
   await page.reload();
-  await page.locator('#ai-controls').waitFor({ state: 'visible' });
-  await page.locator('#model option').waitFor({ state: 'attached' });
+  await page.locator('#model option[value="model"]').waitFor({ state: 'attached' });
+  assert.equal(await page.locator('#model').inputValue(), '');
+  assert.equal(await page.locator('#model-sharing').isVisible(), false);
+  assert.equal(await page.locator('#ai-controls, #ask-ai, #ai-consent').count(), 0);
   await page.locator('#prompt').fill('recursion');
-  await page.locator('#ask-ai').click();
+  await page.locator('#prompt').press('Enter');
+  await page.locator('#result-list .source').first().waitFor();
   assert.equal(aiCalls, 0);
-  await page.locator('#ai-consent').check();
-  await page.locator('#ask-ai').click();
+  await page.locator('#model').selectOption('model');
+  assert.equal(aiCalls, 0);
+  assert.equal(await page.locator('#model-sharing').isVisible(), true);
+  await page.screenshot({ path: '.dd2l/ui-model-mobile.png' });
+  await page.locator('#send').click();
   await page.locator('#ai-answer').waitFor({ state: 'visible' });
   assert.equal(aiCalls, 1);
   assert.equal(await page.locator('#answer-text script').count(), 0);
   assert.match(await page.locator('#answer-text').textContent(), /<script>/);
   assert.match(await page.locator('#answer-sources').textContent(), /\[1\].*Assignment/);
-  assert.equal(await page.locator('#ai-consent').isChecked(), false);
+  assert.equal(await page.locator('#send').isEnabled(), true);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.locator('#prompt').fill('memory');
   assert.equal(await page.locator('#ai-answer').isVisible(), false);
+  let releaseAnswer, markStarted, markFinished;
+  const started = new Promise(resolve => { markStarted = resolve; });
+  const finished = new Promise(resolve => { markFinished = resolve; });
+  await page.route('**/api/llm/answer', async route => {
+    aiCalls++;
+    markStarted();
+    await new Promise(resolve => { releaseAnswer = resolve; });
+    try { await route.fulfill({ json: { answer: 'Late answer must stay hidden.', sources: [] } }); }
+    catch { /* The browser may already have canceled this request. */ }
+    markFinished();
+  });
+  await page.locator('#prompt').press('Enter');
+  await started;
+  assert.equal(await page.locator('#send').isDisabled(), true);
+  await page.locator('#model').selectOption('');
+  assert.equal(await page.locator('#send').isEnabled(), true);
+  releaseAnswer();
+  await finished;
+  assert.equal(await page.locator('#ai-answer').isVisible(), false);
+  await page.locator('#prompt').press('Enter');
+  await page.locator('#result-list .source').first().waitFor();
+  assert.equal(aiCalls, 2);
+  assert.equal(await page.locator('#model-sharing').isVisible(), false);
+  await page.locator('#new-chat').click();
+  await page.screenshot({ path: '.dd2l/ui-local-search-mobile.png' });
   await page.locator('#settings-nav').click();
   await page.getByRole('button', { name: 'Continue with ChatGPT', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Sign out of active ChatGPT account' }).waitFor();

@@ -36,16 +36,13 @@
         <div class="composer-footer">
           <label class="sr-only" for="course">Course</label>
           <select id="course" name="course"><option value="">All courses</option></select>
+          <label class="sr-only" for="model">Search mode or model</label>
+          <select id="model" name="model" aria-describedby="search-help"><option value="">Local search</option></select>
           <span id="busy" hidden>Searching…</span>
         </div>
         <span id="search-help" class="sr-only">Find source excerpts by keyword, or connect ChatGPT in Settings to ask a question.</span>
       </form>
-      <div id="ai-controls" class="ai-controls" hidden>
-        <label for="model">ChatGPT model</label><select id="model"></select>
-        <label><input id="ai-consent" type="checkbox"> Send my question and matching coursework excerpts to OpenAI for this answer.</label>
-        <button id="ask-ai" type="button">Ask ChatGPT</button>
-        <span>Using ChatGPT plan · <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">Manage usage</a></span>
-      </div>
+      <p id="model-sharing" class="model-sharing" hidden>Sending with this model shares your question and matching coursework with OpenAI.</p>
       <p id="notice" class="notice" role="status" hidden></p>
     </section>
     <section id="home-widgets" class="home-widgets" aria-labelledby="widgets-heading">

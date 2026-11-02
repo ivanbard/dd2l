@@ -34,7 +34,10 @@ input::-webkit-search-cancel-button { display: none; }
 #send img { display: block; }
 #send:not(:disabled) { filter: brightness(2); }
 #send:not(:disabled):hover { transform: translateY(-1px); filter: brightness(2.6); }
-.composer-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; height: 32px; }
+.composer-footer { position: relative; display: flex; align-items: center; gap: 4px; margin-top: 12px; height: 32px; }
+.composer-footer select { min-width: 0; max-width: 55%; }
+.composer-footer #model { margin-left: auto; max-width: 45%; }
+.composer-footer #busy { position: absolute; top: 35px; right: 0; }
 select { appearance: none; field-sizing: content; max-width: min(350px, 85%); padding: 8px 30px 8px 12px; border: 0; border-radius: 8px; font-size: 13px; line-height: 16px; background: transparent url('/assets/chevron.svg') right 10px center / 14px 14px no-repeat; color: #bababa; cursor: pointer; text-overflow: ellipsis; }
 select:hover { background-color: #ffffff08; }
 option { background: #292929; color: white; }
@@ -67,11 +70,9 @@ dialog header { display: flex; align-items: center; justify-content: space-betwe
 .course-item:hover { background: #ffffff06; }
 .course-item small { display: block; color: #999; }
 code { background: #1a1a1a; border-radius: 4px; padding: 3px 6px; font-size: 12px; }
-.ai-controls { display: grid; gap: 12px; margin: 24px 12px 0; color: #bbb; font-size: 13px; line-height: 1.6; }
-.ai-controls input { width: auto; margin-right: 8px; }
-.ai-controls select { max-width: 100%; }
-.ai-controls a, #panel-body a { color: #a7d7e5; }
-.ai-controls button, .account-action { border: 1px solid #555; background: #333; color: #eee; border-radius: 8px; padding: 10px 14px; }
+.model-sharing { color: #aaa; font-size: 11px; line-height: 1.5; margin: 18px 12px 0; }
+#panel-body a { color: #a7d7e5; }
+.account-action { border: 1px solid #555; background: #333; color: #eee; border-radius: 8px; padding: 10px 14px; }
 .account-action { display: block; margin: 12px 0; }
 #answer-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; color: #ddd; }
 .auth-page { min-height: 100svh; display: grid; place-items: center; padding: 40px 24px; }
