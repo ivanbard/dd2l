@@ -8,6 +8,8 @@
   },
   "scripts": {
     "start": "node src/cli.mjs",
+    "ui": "node src/ui-server.mjs",
+    "ui:check": "node scripts/check-ui.mjs",
     "test": "node --test",
     "login": "node src/cli.mjs login",
     "audit": "node src/cli.mjs audit",

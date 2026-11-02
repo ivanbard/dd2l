@@ -1,3 +1,7 @@
+# UI icons
+
+The four sidebar action icons are from [Lucide](https://lucide.dev), version 0.468.0 (square-pen, search, book-open, settings), with their stroke color set to match the UI. The upstream ISC license notice is retained in [ui/assets/LUCIDE-LICENSE.txt](ui/assets/LUCIDE-LICENSE.txt). The SVGs are bundled locally; no icon runtime or external requests are required.
+
 # Reference implementation
 
 Authentication behavior and endpoint discovery were informed by [brightspace-mcp-server](https://github.com/RohanMuppa/brightspace-mcp-server), version 5.1.27, by Rohan Muppa. dd2l does not import or run that server. The applicable notice is retained here for attribution of the reference work:

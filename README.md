@@ -35,6 +35,26 @@ For a sustained foreground check, run `npm run soak -- --minutes 180`. This uses
 
 Run `npm start -- --help` for commands and `npm test` for the focused checks.
 
+## UI prototype
+
+```powershell
+npm run ui
+```
+
+Open the printed [local URL](http://127.0.0.1:4173). The home screen implements the [Figma Home design](https://www.figma.com/design/ASr0dnwupPLbXmeT1AiPGg/dd2l?node-id=1-3): prompt, course selector, sidebar and profile. Search finds keyword matches in cached course materials and displays source excerpts with retrieval dates and stale-cache labels. Courses opens a material browser; Settings and Profile show connection status and refresh instructions. The source link opens the course in onQ using your normal browser sign-in.
+
+The UI reads the existing inventory without changing it or loading credentials. Run `npm run audit -- --all` or keep `npm run sync -- --all` running separately to collect data. Each search reads the current cache. Only courses confirmed accessible in cached enrollments are shown; unavailable material stays unavailable, and coverage is limited to what the connector has collected. There is no AI response service yet: natural-language input is matched by keywords, not interpreted as a question.
+
+For an isolated walkthrough with fictional data and no school login:
+
+```powershell
+npm run ui -- --demo
+```
+
+Demo mode is visibly labeled and never reads the real inventory. Try `recursion`, `memory`, or `syllabus`, filter by course, or browse Courses. Use `--port 4174` to run another instance. The server binds only to `127.0.0.1`, rejects foreign browser origins, and serves private responses without caching. Stop it with Ctrl+C when finished.
+
+`npm test` covers retrieval, cache access and HTTP boundaries. `npm run ui:check` uses installed Chrome headlessly to check the home geometry, assets, core interactions, mobile overflow and error recovery; screenshots go in ignored `.dd2l/ui-*.png`. SF Pro uses the system font when available, with Segoe UI as the Windows fallback.
+
 ## What is collected
 
 The audit enumerates course offerings, then reads the chosen course's content tree, assignment folders, quiz list, own grade values, announcements, discussion forums, own groups/sections, and calendar events. It traverses assignments and accessible content files in resumable batches, including own submissions, released feedback, rubric tables and attachments. Discussion forum/topic/post reads and file attachments have independent parent-specific cursors. `traversal` reports the batch limits; an unfinished batch is not reported as complete.
@@ -71,6 +91,6 @@ Syllabus content lives in individual `syllabus_source` resource rows; the `sylla
 
 An audit can complete successfully as a command while reporting `complete: false`: resource-level denials, unavailable routes, or partial collections remain visible. A successful collection read establishes coverage of that endpoint, not of every activity the website or an external tool may contain.
 
-The interface, prompt retrieval, private external-provider integrations and unattended Windows startup remain later milestones. See [the gap-resolution report](docs/gap-resolution.md) for implemented paths, live evidence and remaining access/verification limits.
+Grounded AI prompt retrieval, private external-provider integrations and unattended Windows startup remain later milestones. See [the gap-resolution report](docs/gap-resolution.md) for implemented paths, live evidence and remaining access/verification limits.
 
 Do not commit credentials, session cookies, access tokens, downloaded coursework, grades, or classmates' personal information. Discovery evidence should contain access outcomes and field names rather than private payloads.
