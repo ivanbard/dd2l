@@ -1,0 +1,69 @@
+name: Missing school / Brightspace URL
+description: Request support for a school that is not listed in dd2l.
+title: "[Missing URL] "
+labels:
+  - "missing url"
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping expand dd2l's school support!
+
+        Please share your school's name and any public information you have about its D2L Brightspace login. **Do not include usernames, passwords, access tokens, or other private account details.**
+
+  - type: input
+    id: school-name
+    attributes:
+      label: School / university name
+      description: Use the school's full official name, if possible.
+      placeholder: "e.g., Queen's University"
+    validations:
+      required: true
+
+  - type: input
+    id: school-location
+    attributes:
+      label: School location
+      description: City, province/state, and country help distinguish similarly named schools.
+      placeholder: "e.g., Kingston, Ontario, Canada"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: brightspace-usage
+    attributes:
+      label: Does your school use D2L Brightspace?
+      options:
+        - "Yes"
+        - "No"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: input
+    id: brightspace-url
+    attributes:
+      label: Brightspace login URL
+      description: Provide the public sign-in address if known. Leave blank if you are requesting help locating it.
+      placeholder: "https://your-school.brightspace.com/d2l/home"
+    validations:
+      required: false
+
+  - type: input
+    id: school-website
+    attributes:
+      label: Official school website (optional)
+      description: A public school or learning-platform help page can help verify the address.
+      placeholder: "https://www.example.edu"
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional details (optional)
+      description: Share a public login/help page, redirect behavior, or any other relevant context. Do not share private account information.
+      placeholder: "Anything else that could help us confirm the correct Brightspace URL?"
+    validations:
+      required: false
