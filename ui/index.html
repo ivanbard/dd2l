@@ -26,11 +26,11 @@
   <span id="demo-badge" class="demo-badge" hidden>Demo · sample coursework</span>
   <main id="workspace" class="workspace">
     <section class="home" aria-labelledby="heading">
-      <h1 id="heading">What are we looking for today?</h1>
+      <h1 id="heading">What do you want to work on?</h1>
       <form id="search-form" class="composer" role="search">
         <div class="prompt-field">
           <label class="sr-only" for="prompt">Search your cached coursework</label>
-          <input id="prompt" name="q" type="search" maxlength="500" autocomplete="off" aria-describedby="search-help">
+          <input id="prompt" name="q" type="search" maxlength="500" autocomplete="off" placeholder="Describe your task or goal…" aria-describedby="search-help">
           <button id="send" type="submit" disabled aria-label="Search"><img src="/assets/send.svg" alt="" width="32" height="32"><span id="busy" hidden></span></button>
         </div>
         <div class="composer-footer">
@@ -41,9 +41,10 @@
           <select id="model" name="model" aria-describedby="search-help"><option value="">Local search</option></select>
           <span id="model-loading" class="loading-slot"></span>
         </div>
-        <span id="search-help" class="sr-only">Describe an assignment and course to open its workspace, search by keyword, or connect ChatGPT in Settings for explanations.</span>
+        <span id="search-help" class="sr-only">Select a ChatGPT model for an adaptive workspace around any coursework goal. Local search uses keywords and assignment matching.</span>
       </form>
-      <p id="model-sharing" class="model-sharing" hidden>Sending with this model shares your question and matching coursework with OpenAI.</p>
+      <p id="model-sharing" class="model-sharing" hidden>Adaptive workspace · Sending shares your goal, previous workspace context, and cached course previews and selected excerpts with OpenAI.</p>
+      <p id="adaptive-help" class="model-sharing">For adaptive workspaces, connect ChatGPT in Settings and select a model. Local search uses keyword matching.</p>
       <p id="notice" class="notice" role="status" hidden></p>
     </section>
     <section id="home-widgets" class="home-widgets" aria-labelledby="widgets-heading">
@@ -54,12 +55,12 @@
       <div id="widget-grid" class="widget-grid"></div>
       <p id="widget-status" class="widget-status" role="status"></p>
     </section>
-    <section id="assignment-workspace" class="results assignment-workspace" aria-labelledby="assignment-heading" hidden></section>
     <section id="ai-answer" class="results" aria-label="AI answer" hidden>
       <h2 id="ai-answer-title" tabindex="-1">Your answer</h2><p id="answer-text"></p>
       <div id="answer-view" class="answer-view" hidden></div>
       <h3 class="answer-sources-heading">Sources</h3><div id="answer-sources"></div>
     </section>
+    <section id="assignment-workspace" class="results assignment-workspace" aria-labelledby="assignment-heading" hidden></section>
     <section id="results" class="results" aria-label="Coursework results" hidden>
       <div class="results-heading"><h2 id="results-title" tabindex="-1">Sources</h2><span id="result-count"></span></div>
       <p class="retrieval-note">Matching excerpts from your local inventory. These are source materials, not an AI-generated answer.</p>

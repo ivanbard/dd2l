@@ -10,23 +10,28 @@ your materials, and ask questions with sources.
 - sign in to onQ through Chrome, including your school's MFA
 - collect course materials, assignments, grades, announcements and syllabus text
 - search the local cache, browse sources, and customize your home screen widgets
-- optionally connect ChatGPT for answers grounded in matching course excerpts
+- connect ChatGPT to compose adaptive workspaces around your goals
 
-Describe a task such as **“I'm working on Assignment 2 for ELEC 425”** to open
-an assignment workspace. It brings together cached instructions, attachments,
-rubric, due and availability dates, submission status, and related course
-references, with a link to the Brightspace submission dropbox. If several
-assignments match, choose one before continuing. Missing, inaccessible, and
-stale records are labelled explicitly.
+Connect ChatGPT in Settings to use your existing plan, then describe what you
+want to do: **“Help me get ready for tomorrow's seminar”**, **“What should I
+prioritize across my classes?”**, or **“I'm stuck on the filter design report.”**
+The connected model interprets the goal, selects relevant cached records across
+courses, and organizes them into a workspace with source panels, explanations,
+checklists or comparisons. There is no required prompt format or fixed set of
+supported task names. If it needs clarification, answer in the same composer.
 
-Follow-ups keep the selected assignment: **“Am I ready to submit?”** moves the
-rubric first; **“Explain criterion three”** keeps that rubric in context for a
-ChatGPT answer when a model is selected. Local mode opens the relevant records
-without an AI account. New search or changing course clears assignment context.
-Matching currently uses course codes, assignment numbers or titles, and explicit
-references in the instructions; broader requests still use keyword search.
-Collection is incremental, so a workspace may be incomplete until its records
-have synced. Cached submission records do not confirm current submission status.
+Follow-ups carry the workspace's goal and selected source references; you can
+refine the task or change direction. A connected model is selected by default;
+requests run only when you send a prompt, with the sharing notice visible.
+Choose **Local search** for keyword search and deterministic assignment views
+without sending data to AI. New search clears the goal; changing course clears
+context and sets a hard scope for the next request.
+
+Adaptive requests normally use two model calls: planning from course previews,
+then grounded composition from the selected fuller excerpts. Missing, inaccessible,
+and stale records remain explicit. Collection is incremental, so workspaces
+can only use material already synced. Cached submissions do not confirm current
+submission status, and generated guidance should be checked against its sources.
 
 The connector is read-only. It does not submit work or change grades, posts,
 quiz attempts or completion states. Coverage depends on what onQ makes accessible.
@@ -86,7 +91,7 @@ cache lives in `%LOCALAPPDATA%\dd2l` and is **not encrypted**. Local search does
 not send your question to an AI provider.
 
 For AI answers, connect ChatGPT in Settings and choose a model below the prompt.
-Submitting sends your question and matching course excerpts to OpenAI and uses
+Submitting sends your goal, previous workspace context, course previews and selected excerpts to OpenAI and uses
 your plan's limits. Check generated answers against the supplied sources.
 
 Stop the app, then run `dd2l logout` (or `npm start -- logout` from source) to

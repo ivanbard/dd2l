@@ -259,7 +259,10 @@ try {
   });
   await page.reload();
   await page.locator('#model option[value="model"]').waitFor({ state: 'attached' });
-  assert.equal(await page.locator('#model').inputValue(), '');
+  assert.equal(await page.locator('#model').inputValue(), 'model');
+  assert.equal(await page.locator('#model-sharing').isVisible(), true);
+  assert.equal(aiCalls, 0);
+  await page.locator('#model').selectOption('');
   assert.equal(await page.locator('#model-sharing').isVisible(), false);
   assert.equal(await page.locator('#ai-controls, #ask-ai, #ai-consent').count(), 0);
   await page.locator('#prompt').fill('recursion');
@@ -336,37 +339,58 @@ try {
   await page.locator('#new-chat').click();
   await page.screenshot({ path: '.dd2l/ui-local-search-mobile.png' });
   let workspaceCalls = 0;
+  const taskSource = { id: 'memory-source', title: 'Memory and retrieval', category: 'content', courseName: 'PSYC 100',
+    text: 'Encoding, working memory, and retrieval practice.', excerpt: 'Encoding, working memory, and retrieval practice.',
+    stale: true, status: 'stale', lastSuccess: '2026-11-02T14:00:00Z', url: 'https://onq.queensu.ca/d2l/home/102' };
+  const goal = 'Prepare for the memory seminar';
+  const adaptiveWorkspace = { kind: 'task', title: 'Your seminar workspace', goal, question: '',
+    context: { goal, sourceIds: ['memory-source'] }, catalogueCount: 20, total: 20,
+    sections: [{ title: 'Understand the ideas', purpose: 'Build confidence before the seminar.', sources: [taskSource] }] };
   await page.route('**/api/llm/answer', async route => {
     workspaceCalls++;
     const body = route.request().postDataJSON();
-    assert.equal(body.course, '103');
-    assert.equal(body.assignment, '202');
-    if (workspaceCalls > 1) {
-      await route.fulfill({ status: 503, json: { error: 'Provider unavailable. Your assignment is still available locally.' } });
-      return;
+    assert.equal(body.course, '');
+    assert.equal(body.assignment, undefined);
+    if (workspaceCalls === 1) {
+      assert.equal(body.context, null);
+      await route.fulfill({ json: { workspace: { ...adaptiveWorkspace, question: 'Which class would you like to focus on?', sections: [],
+        context: { goal: 'Get ready for class', sourceIds: [] } }, sources: [] } });
+    } else if (workspaceCalls === 2) {
+      assert.equal(body.context.goal, 'Get ready for class');
+      await route.fulfill({ json: { workspace: adaptiveWorkspace, answer: 'Practice retrieving the memory concepts before the seminar [1].', sources: [taskSource] } });
+    } else {
+      assert.equal(body.context.goal, adaptiveWorkspace.context.goal);
+      assert.deepEqual(body.context.sourceIds, adaptiveWorkspace.context.sourceIds);
+      assert.match(body.context.summary, /Practice retrieving/);
+      await route.fulfill({ status: 503, json: { error: 'Provider unavailable. Your workspace is still available locally.' } });
     }
-    await route.fulfill({ json: { answer: 'The rubric includes validation worth 40 points [1].', sources: [{
-      title: 'Rubric', courseName: 'ELEC 425', excerpt: 'Validation: 40 points', lastSuccess: '2026-11-02T14:00:00Z',
-      url: 'https://onq.queensu.ca/d2l/lms/dropbox/user/folder_submit_files.d2l?db=202&ou=103',
-    }] } });
   });
   await page.locator('#course').selectOption('');
   await page.locator('#model').selectOption('model');
-  await page.locator('#prompt').fill('assignment 2');
+  await page.locator('#prompt').fill('Help me feel ready for class');
   await page.locator('#prompt').press('Enter');
-  await page.getByRole('heading', { name: 'Which assignment?', exact: true }).waitFor();
-  assert.equal(workspaceCalls, 0);
-  await page.locator('#assignment-workspace .course-item').filter({ hasText: 'ELEC 425' }).click();
-  await page.getByText('The rubric includes validation worth 40 points [1].', { exact: true }).waitFor();
+  await page.getByText('Which class would you like to focus on?', { exact: true }).waitFor();
   assert.equal(workspaceCalls, 1);
-  assert.equal(await page.locator('#assignment-workspace').isVisible(), true);
-  await page.locator('#prompt').fill('Explain criterion three');
+  assert.equal(await page.locator('#ai-answer').isVisible(), false);
+  await page.locator('#prompt').fill('The psychology seminar on remembering things');
   await page.locator('#prompt').press('Enter');
-  await page.getByText('Provider unavailable. Your assignment is still available locally.', { exact: true }).waitFor();
+  await page.getByText('Practice retrieving the memory concepts before the seminar [1].', { exact: true }).waitFor();
   assert.equal(workspaceCalls, 2);
+  assert.match(await page.locator('#assignment-workspace').textContent(), /Understand the ideas/);
+  assert.match(await page.locator('#assignment-workspace').textContent(), /Stale cache/);
+  assert.equal(await page.locator('#assignment-workspace').isVisible(), true);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.screenshot({ path: '.dd2l/ui-adaptive-mobile.png', fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 832 });
+  await page.screenshot({ path: '.dd2l/ui-adaptive-desktop.png', fullPage: true });
+  await page.locator('#prompt').fill('Now make this into a study plan');
+  await page.locator('#prompt').press('Enter');
+  await page.getByText('Provider unavailable. Your workspace is still available locally.', { exact: true }).waitFor();
+  assert.equal(workspaceCalls, 3);
   assert.equal(await page.locator('#assignment-workspace').isVisible(), true);
   assert.equal(await page.locator('#ai-answer').isVisible(), false);
   await page.locator('#new-chat').click();
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('#settings-nav').click();
   await page.getByRole('button', { name: 'Continue with ChatGPT', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Sign out of active ChatGPT account' }).waitFor();

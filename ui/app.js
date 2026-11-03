@@ -16,6 +16,8 @@ let courses = [];
 let request;
 let aiRequest;
 let assignmentContext;
+let taskContext;
+let defaultModel = '';
 let finishPromptLoading = () => {};
 
 function element(tag, text, className) {
@@ -44,6 +46,7 @@ async function loadAI() {
   try {
     clearAnswer();
     $('model').replaceChildren(new Option('Local search', ''));
+    defaultModel = '';
     updateComposer();
     const connection = await api('/api/llm/status');
     if (connection.active) {
@@ -52,6 +55,8 @@ async function loadAI() {
       group.label = 'ChatGPT';
       group.append(...models.map(m => new Option(m.name, m.id)));
       $('model').append(group);
+      defaultModel = models[0]?.id || '';
+      $('model').value = defaultModel;
     }
     updateComposer();
   } finally { finish(); }
@@ -60,7 +65,8 @@ async function loadAI() {
 function updateComposer() {
   const model = $('model').value;
   $('model-sharing').hidden = !model;
-  $('model').setAttribute('aria-describedby', model ? 'model-sharing' : 'search-help');
+  $('adaptive-help').hidden = !!model;
+  $('model').setAttribute('aria-describedby', model ? 'model-sharing' : 'adaptive-help');
   $('send').disabled = !$('prompt').value.trim() || !$('busy').hidden;
   $('send').setAttribute('aria-label', model ? `Ask ${$('model').selectedOptions[0].textContent}` : 'Search locally');
 }
@@ -96,24 +102,32 @@ async function askAI() {
   $('results').hidden = true;
   notice();
   try {
-    const local = await api(`/api/search?${searchParams($('prompt').value.trim())}`, current.signal);
-    if (aiRequest !== current) return;
-    showAssignment(local.workspace, local.demo);
-    if (local.workspace && local.workspace.status !== 'resolved') { $('assignment-heading').focus(); return; }
-    const data = await aiAction('answer', { q: $('prompt').value.trim(), course: $('course').value, assignment: assignmentContext?.id || '', model: $('model').value, consent: true }, current.signal);
+    const data = await aiAction('answer', { q: $('prompt').value.trim(), course: $('course').value,
+      context: taskContext || null, model: $('model').value, consent: true }, current.signal);
     if (aiRequest !== current) return;
     $('workspace').classList.add('has-results');
     if (data.workspace) {
-      showAssignment(data.workspace, false);
-      if (data.workspace.status !== 'resolved') { $('assignment-heading').focus(); return; }
+      showAssignment(data.workspace, status?.demo || false);
+      if (data.workspace.kind === 'task') taskContext.summary = JSON.stringify({
+        question: data.workspace.question,
+        sections: data.workspace.sections.map(({ title, purpose }) => ({ title, purpose })),
+        answer: data.answer || '', view: data.view || null,
+      }).slice(0, 12_000);
+      if (data.workspace.question || data.answerWarning) {
+        if (data.answerWarning) notice(data.answerWarning);
+        $('assignment-heading').focus();
+        return;
+      }
     }
     $('answer-text').textContent = data.answer;
     const rendered = renderAnswerView($('answer-view'), data.view, data.sources);
     $('answer-view').hidden = !rendered || !data.view.sections.length;
-    $('ai-answer-title').textContent = rendered ? data.view.title || 'Your answer' : 'Your answer';
+    $('ai-answer-title').textContent = rendered ? data.view.title || data.workspace?.title || 'Your answer' : data.workspace?.title || 'Your answer';
     if (data.viewWarning) notice(data.viewWarning);
     $('answer-sources').replaceChildren();
+    $('ai-answer').querySelector('.answer-sources-heading').hidden = data.workspace?.kind === 'task';
     for (const [i, source] of data.sources.entries()) {
+      if (data.workspace?.kind === 'task') continue;
       const article = element('article', undefined, 'source');
       article.id = `answer-source-${i + 1}`;
       article.tabIndex = -1;
@@ -162,7 +176,7 @@ function reset() {
   clearAnswer();
   showAssignment(null);
   $('prompt').value = '';
-  $('model').value = '';
+  $('model').value = defaultModel;
   updateComposer();
   $('results').hidden = true;
   $('result-list').replaceChildren();
@@ -175,6 +189,8 @@ function searchParams(query) {
 }
 
 function showAssignment(workspace, demo = false) {
+  taskContext = workspace?.kind === 'task' ? workspace.context : workspace?.status === 'resolved'
+    ? { goal: `Work on ${workspace.title} in ${workspace.courseName}`, sourceIds: [] } : undefined;
   assignmentContext = workspace?.status === 'resolved' ? { id: workspace.id, course: workspace.course } : undefined;
   if (assignmentContext) $('course').value = assignmentContext.course;
   renderAssignmentWorkspace($('assignment-workspace'), workspace, demo, choice => {
@@ -275,7 +291,7 @@ async function showStatus() {
       element('p', status.demo ? 'Demo mode · fictional sample coursework. No school account is connected to this view.' : 'Local inventory · read-only. Local search stays on this device. Selecting a ChatGPT model and sending a question shares matching coursework with OpenAI.'),
       element('p', `${status.courseCount} courses · ${status.sourceCount} searchable sources`),
       element('p', `Connector: ${status.state?.state || 'Not synced'} · Last successful source: ${date(status.lastSuccess)}`),
-      element('p', 'Describe an assignment and course to gather its cached records. Other searches match keywords. Missing sources and access restrictions mean coverage may be incomplete.'),
+      element('p', 'Select a ChatGPT model to build adaptive workspaces around your goals. Local mode uses keyword matching and assignment records. Missing sources and access restrictions mean coverage may be incomplete.'),
       element('p', 'Setup and start collect coursework automatically while the terminal stays open.'),
       element('p', 'If sign-in has expired, stop the app and run npx @ivanbard/dd2l setup (npm run setup from source). For later launches use npx @ivanbard/dd2l start (npm start -- start from source). Reopen Courses or search again to read the latest cache.'),
     );

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assignmentWorkspace, workspaceSources } from '../src/assignment-workspace.mjs';
+import { assignmentWorkspace } from '../src/assignment-workspace.mjs';
 import { projectInventory } from '../src/ui-data.mjs';
 import { demoInventory } from '../src/ui-demo.mjs';
 import { createUiServer } from '../src/ui-server.mjs';
@@ -34,10 +34,7 @@ test('natural language resolves the course and assignment, gathering related rec
   assert.equal(workspace.supporting.length, 2);
   assert.ok(workspace.supporting.every(source => source.course === '103' && source.reason));
   assert.match(workspace.url, /folder_submit_files\.d2l\?db=202&ou=103$/);
-  const sources = workspaceSources(workspace);
-  assert.equal(sources[0].dueDate, '2026-11-12T23:59:00-05:00');
-  assert.ok(sources.some(source => source.category === 'rubric'));
-  assert.ok(sources.every(source => source.course === '103' && source.excerpt));
+  assert.equal(workspace.dueDate, '2026-11-12T23:59:00-05:00');
   assert.doesNotMatch(JSON.stringify(workspace), /Memory journal/);
 });
 
@@ -92,7 +89,6 @@ test('missing and stale records do not invent current submission status, deadlin
   assert.match(workspace.submissionStatus, /1 cached submission · stale/);
   assert.equal(workspace.records.find(record => record.category === 'rubric').status, 'missing');
   assert.equal(workspace.records.find(record => record.category === 'attachment').status, 'stale');
-  assert.match(workspaceSources(workspace)[0].excerpt, /Due: Not retrieved/);
   const missing = assignmentWorkspace(projectInventory([enrollment, base], null), 'assignment 2', '1');
   assert.equal(missing.submissionStatus, 'Submission status not retrieved');
 });
@@ -105,16 +101,6 @@ test('hidden assignments, revoked courses and denied listings cannot produce a w
   assert.equal(assignmentWorkspace(projectInventory([listing()], null), 'assignment 2', '1').status, 'missing');
 });
 
-test('AI evidence preserves the rubric when many assignment attachments compete for space', () => {
-  const workspace = assignmentWorkspace(demoInventory(), 'assignment 2 ELEC 425');
-  const attachment = workspace.records.find(record => record.category === 'attachment');
-  workspace.records.unshift(...Array.from({ length: 12 }, (_, index) => ({ ...attachment, id: `extra-${index}` })));
-  const sources = workspaceSources(workspace);
-  assert.equal(sources.length, 8);
-  assert.equal(sources[1].category, 'instructions');
-  assert.equal(sources[2].category, 'rubric');
-});
-
 test('HTTP workspace and AI share resolved evidence, validate context, and re-read revoked access', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'dd2l-assignment-'));
   const store = new Store(directory);
@@ -123,8 +109,15 @@ test('HTTP workspace and AI share resolved evidence, validate context, and re-re
     row('rubrics', '20/assessment/rubrics', [{ Name: 'Criterion one', Points: 10 }]),
   ], {}, enrollments);
   let calls = 0;
-  const server = createUiServer({ inventoryPath: join(directory, 'inventory.sqlite'), llm: { answer: async (q, model, sources) => {
+  let failExplanation = false;
+  const server = createUiServer({ inventoryPath: join(directory, 'inventory.sqlite'), llm: {
+    planWorkspace: async (q, model, { catalogue }) => ({ title: 'Your task', goal: q,
+      question: q === 'assignment 3' ? 'Assignment 3 is not in the cache. Which activity did you mean?' : '',
+      sections: q === 'assignment 3' ? [] : [{ title: 'Criteria', purpose: 'Review the grading criteria',
+        sourceIds: catalogue.filter(source => source.category === 'rubric').map(source => source.id) }] }),
+    answer: async (q, model, sources) => {
     calls++;
+    if (failExplanation) throw Object.assign(new Error('Provider unavailable'), { public: true });
     assert.equal(model, 'model');
     assert.ok(sources.some(source => source.category === 'rubric'));
     assert.ok(sources.every(source => source.course === '1'));
@@ -143,11 +136,17 @@ test('HTTP workspace and AI share resolved evidence, validate context, and re-re
   assert.equal((await search({ q: 'explain', assignment: '20' })).status, 400);
   assert.equal((await search({ q: 'explain', course: '1', assignment: '../20' })).status, 400);
   assert.equal((await post({ q: 'explain', course: '1', assignment: {} })).status, 400);
+  assert.equal((await post({ q: 'explain', context: { goal: 'study', sourceIds: [], admin: true } })).status, 400);
   const answer = await (await post({ q: 'Explain criterion one', course: '1', assignment: '20' })).json();
-  assert.equal(answer.workspace.id, '20');
+  assert.equal(answer.workspace.kind, 'task');
   assert.equal(answer.answer, 'Grounded answer.');
-  assert.equal((await (await post({ q: 'assignment 3', course: '1' })).json()).workspace.status, 'missing');
-  assert.equal(calls, 1);
+  failExplanation = true;
+  const partial = await (await post({ q: 'Explain criterion one', course: '1' })).json();
+  assert.equal(partial.workspace.kind, 'task');
+  assert.equal(partial.answerWarning, 'Provider unavailable');
+  assert.ok(partial.sources.length);
+  assert.match((await (await post({ q: 'assignment 3', course: '1' })).json()).workspace.question, /not in the cache/);
+  assert.equal(calls, 2);
   store.commit({ Identifier: 4 }, 'https://school.example', [{ ...enrollments, data: [] }], {}, { complete: true, data: [] });
   assert.equal((await search({ q: 'assignment 2', course: '1' })).status, 404);
 });

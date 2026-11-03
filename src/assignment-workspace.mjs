@@ -126,15 +126,3 @@ export function assignmentWorkspace(inventory, query, course = '', assignmentId 
   const records = [...target.records].sort((a, b) => order.indexOf(a.category) - order.indexOf(b.category));
   return { status: 'resolved', ...target, records, supporting, intent: submitting ? 'submit' : 'work' };
 }
-
-export function workspaceSources(workspace) {
-  if (workspace?.status !== 'resolved') return [];
-  const overview = { id: `${workspace.course}:${workspace.id}`, course: workspace.course, courseName: workspace.courseName,
-    title: workspace.title, category: 'assignment', url: workspace.url, stale: workspace.stale, lastSuccess: workspace.lastSuccess,
-    dueDate: workspace.dueDate, text: `Due: ${workspace.dueDate || 'Not retrieved'}\nOpens: ${workspace.startDate || 'Not retrieved'}\nCloses: ${workspace.endDate || 'Not retrieved'}\n${workspace.submissionStatus}\n${workspace.records.filter(record => record.status !== 'available').map(record => `${record.title}: ${record.status}`).join('\n')}` };
-  const priority = ['instructions', 'rubric', 'feedback', 'attachment'];
-  const records = workspace.records.filter(record => record.text)
-    .sort((a, b) => priority.indexOf(a.category) - priority.indexOf(b.category));
-  return [overview, ...records, ...workspace.supporting].slice(0, 8)
-    .map(({ text, ...source }) => ({ ...source, excerpt: text.length > 8000 ? `${text.slice(0, 8000)}\n[Excerpt truncated.]` : text }));
-}

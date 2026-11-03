@@ -6,7 +6,8 @@ import { parseArgs } from 'node:util';
 import { readInventory, searchInventory, homeInventory } from './ui-data.mjs';
 import { demoInventory } from './ui-demo.mjs';
 import { ChatGPT } from './llm.mjs';
-import { assignmentWorkspace, workspaceSources } from './assignment-workspace.mjs';
+import { assignmentWorkspace } from './assignment-workspace.mjs';
+import { composeTaskWorkspace, validTaskContext } from './task-workspace.mjs';
 
 const root = fileURLToPath(new URL('../ui/', import.meta.url));
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png' };
@@ -63,7 +64,7 @@ export function createUiServer({ demo = false, inventoryPath = join(process.env.
         let bytes = 0;
         for await (const chunk of req) {
           bytes += chunk.length;
-          if (bytes > 8192) { send(413, { error: 'Request too large.' }); return; }
+          if (bytes > (url.pathname === '/api/llm/answer' ? 65_536 : 8192)) { send(413, { error: 'Request too large.' }); return; }
           chunks.push(chunk);
         }
         let data;
@@ -74,20 +75,29 @@ export function createUiServer({ demo = false, inventoryPath = join(process.env.
         else if (url.pathname === '/api/llm/select') send(200, await llm.select(data.id));
         else if (url.pathname === '/api/llm/logout') send(200, await llm.logout());
         else if (url.pathname === '/api/llm/answer') {
-          const { q, course = '', assignment = '', model, consent } = data;
+          const { q, course = '', assignment = '', context = null, model, consent } = data;
           if (typeof q !== 'string' || !q.trim() || q.length > 500 || typeof course !== 'string' || (course && !/^\d+$/.test(course)) || typeof model !== 'string' || !model || model.length > 200 || consent !== true) {
             send(400, { error: 'Provide a question, course, model and permission to send excerpts to OpenAI.' }); return;
           }
           if (typeof assignment !== 'string' || (assignment && (!/^\d+$/.test(assignment) || !course))) { send(400, { error: 'Invalid assignment context.' }); return; }
+          if (!validTaskContext(context)) { send(400, { error: 'Invalid workspace context.' }); return; }
           const inventory = readInventory(inventoryPath);
           if (course && !inventory.courses.some(c => c.id === course)) { send(404, { error: 'Course is not available in this inventory.' }); return; }
-          const workspace = assignmentWorkspace(inventory, q, course, assignment);
-          if (workspace && workspace.status !== 'resolved') { send(200, { workspace, sources: [] }); return; }
-          const sources = workspace ? workspaceSources(workspace) : searchInventory(inventory, q, course).results.slice(0, 8);
           const controller = new AbortController();
           const abort = () => controller.abort();
           res.on('close', abort);
-          try { send(200, { ...await llm.answer(q, model, sources, AbortSignal.any([controller.signal, AbortSignal.timeout(90_000)])), sources, workspace }); }
+          try {
+            const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]);
+            const task = await composeTaskWorkspace(llm, inventory, q, model, course, context, signal,
+              () => readInventory(inventoryPath));
+            if (task.workspace.question) { send(200, task); return; }
+            try {
+              send(200, { ...await llm.answer(`Goal: ${task.workspace.goal}\nCurrent request: ${q}`, model, task.sources, signal), ...task });
+            } catch (error) {
+              if (controller.signal.aborted) throw error;
+              send(200, { ...task, answerWarning: error.public ? error.message : 'AI explanation is unavailable. Your selected sources are available below.' });
+            }
+          }
           finally { res.off('close', abort); }
         } else send(404, { error: 'Not found.' });
         return;

@@ -129,6 +129,40 @@ test('logout removes tokens and reports failed remote revocation, retaining regi
   await assert.rejects(llm.models(), /Settings first/);
 });
 
+test('adaptive planning uses the connected model and structured catalogue IDs before grounded composition', async t => {
+  let requests = 0;
+  const { llm } = await fixture(t, async (url, options) => {
+    if (url.endsWith('/oauth/token')) return Response.json(tokens);
+    requests++;
+    const body = JSON.parse(options.body);
+    assert.equal(body.model, 'chosen-model');
+    assert.equal(body.store, false);
+    assert.equal(body.tools, undefined);
+    assert.match(body.instructions, /untrusted/);
+    assert.equal(body.text.format.strict, true);
+    const input = JSON.parse(body.input[0].content);
+    if (requests === 1) {
+      assert.equal(input.request, 'I am overwhelmed; help me get back on track');
+      assert.equal(input.catalogue[0].id, 'source-a');
+      assert.equal(input.previousWorkspace.goal, 'Prepare for seminars');
+      assert.match(body.instructions, /arbitrary academic tasks/);
+      return stream(event({ type: 'response.output_text.delta', delta: JSON.stringify({ title: 'Get back on track',
+        goal: 'Prioritize the next steps', question: '', sections: [{ title: 'Start here', purpose: 'Review requirements', sourceIds: ['source-a'] }] }) }) + event({ type: 'response.completed' }));
+    }
+    assert.equal(input.sources[0].excerpt, 'Read chapter 8 before the seminar.');
+    return stream(event({ type: 'response.output_text.delta', delta: JSON.stringify({ title: 'Next steps', answer: 'Read chapter 8 [1].',
+      sections: [{ type: 'checklist', title: 'Suggested preparation', items: [{ text: 'Read chapter 8.', citations: [1] }] }] }) }) + event({ type: 'response.completed' }));
+  });
+  await connect(llm);
+  const value = await llm.planWorkspace('I am overwhelmed; help me get back on track', 'chosen-model',
+    { catalogue: [{ id: 'source-a', title: 'Memory seminar', preview: 'Read chapter 8 before the seminar.' }], total: 1 },
+    { goal: 'Prepare for seminars', sourceIds: [] });
+  assert.equal(value.sections[0].sourceIds[0], 'source-a');
+  const answer = await llm.answer(value.goal, 'chosen-model', [{ title: 'Memory seminar', excerpt: 'Read chapter 8 before the seminar.' }]);
+  assert.equal(answer.view.sections[0].type, 'checklist');
+  assert.equal(requests, 2);
+});
+
 test('AI HTTP writes require local JSON origin, bounded input and explicit coursework consent', async t => {
   let calls = 0;
   const server = createUiServer({ llm: { login: async () => { calls++; return { url: 'https://auth.openai.com' }; }, callback: async () => { throw new Error('secret'); } } });

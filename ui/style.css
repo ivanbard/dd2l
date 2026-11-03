@@ -227,6 +227,8 @@ code { background: #1a1a1a; border-radius: 4px; padding: 3px 6px; font-size: 12p
 .assignment-workspace .widget { padding: 24px; min-width: 0; min-height: 0; max-height: none; height: auto; overflow-wrap: anywhere; }
 .assignment-workspace .assignment-overview { background: #203238; border-color: #547982; }
 .assignment-workspace h3 { margin: 8px 0 16px; }
+.task-section { margin-top: 32px; }
+.assignment-card h4 { font-size: 17px; margin: 8px 0 16px; }
 .assignment-workspace a { color: #a7d7e5; }
 .assignment-workspace summary { cursor: pointer; padding: 8px 0; }
 .assignment-text { white-space: pre-wrap; line-height: 1.65; max-height: 440px; overflow-y: auto; }

@@ -5,9 +5,13 @@ import { createHash } from 'node:crypto';
 import { projectAssignments } from './assignment-workspace.mjs';
 
 const categories = new Set(['content', 'overview', 'syllabus_source', 'assignments', 'quizzes', 'announcements',
-  'calendar', 'calendar_occurrences', 'content_file', 'assignment_file', 'linked_content', 'video_transcript']);
+  'calendar', 'calendar_occurrences', 'content_file', 'assignment_file', 'linked_content', 'video_transcript',
+  'quiz_details', 'own_quiz_attempts', 'grades', 'own_feedback', 'feedback_file', 'rubrics',
+  'discussion_forums', 'discussion_topics', 'discussion_posts', 'discussion_file']);
 const textFields = new Set(['Title', 'Name', 'Subject', 'Text', 'Html', 'text', 'Description', 'Instructions',
-  'Body', 'Content', 'StartDate', 'EndDate', 'DueDate', 'StartDateTime', 'EndDateTime']);
+  'Body', 'Content', 'StartDate', 'EndDate', 'DueDate', 'StartDateTime', 'EndDateTime',
+  'DisplayedGrade', 'PointsNumerator', 'PointsDenominator', 'WeightedNumerator', 'WeightedDenominator',
+  'Feedback', 'FeedbackText', 'Score', 'Points', 'MaxPoints', 'CompletionDate', 'TimeLimit']);
 
 // Open for each request so logout, revoked access and new syncs are reflected immediately.
 export function readInventory(path) {
@@ -39,38 +43,53 @@ export function projectInventory(rows, state, origin = SCHOOL) {
     .map(item => ({ id: String(item.OrgUnit.Id), name: item.OrgUnit.Name || `Course ${item.OrgUnit.Id}`,
       active: item.Access.IsActive === true }));
   const allowed = new Map(courses.map(course => [course.id, course]));
+  const assignments = projectAssignments(rows, courses, origin);
+  const assignmentParents = new Set(assignments.map(item => `${item.course}:${item.id}`));
+  const restrictedQuizzes = rows.filter(row => row.category === 'quiz_details' &&
+    (['denied', 'not_configured'].includes(row.outcome) || row.data?.IsHidden || row.data?.IsLocked || row.data?.IsPublished === false));
   const sources = [];
   for (const row of rows) {
     if (!categories.has(row.category) || !allowed.has(String(row.course)) || ['denied', 'not_configured'].includes(row.outcome)) continue;
-    const visit = (value, parentTitle = '', depth = 0) => {
+    const assignment = row.key?.match(/\/dropbox\/folders\/(\d+)(?:\/|$)/)?.[1] ||
+      (row.category === 'rubrics' ? row.key?.match(/[?&]objectId=(\d+)(?:&|$)/)?.[1] : null);
+    if (assignment && !assignmentParents.has(`${row.course}:${assignment}`)) continue;
+    if (restrictedQuizzes.some(quiz => String(quiz.course) === String(row.course) && row.key?.startsWith(`${quiz.key}/`))) continue;
+    const visit = (value, parentTitle = '', depth = 0, path = '$') => {
       if (!value || typeof value !== 'object' || depth > 15) return;
-      if (Array.isArray(value)) { for (const item of value) visit(item, parentTitle, depth + 1); return; }
+      if (Array.isArray(value)) {
+        for (const [index, item] of value.entries()) {
+          const id = item?.TopicId ?? item?.Id ?? item?.NewsId ?? item?.GradeObjectIdentifier;
+          visit(item, parentTitle, depth + 1, `${path}/${/^\d+$/.test(String(id)) ? `id${id}` : index}`);
+        }
+        return;
+      }
       if (value.IsHidden || value.IsLocked || value.IsDeleted || value.IsPublished === false ||
         Date.parse(value.StartDateTime) > Date.now() || Date.parse(value.EndDateTime) < Date.now() ||
         (row.category === 'announcements' && (Date.parse(value.StartDate) > Date.now() || Date.parse(value.EndDate) < Date.now()))) return;
       const title = String(value.Title || value.Name || value.Subject || value.title || parentTitle || row.category.replaceAll('_', ' '));
       const parts = [];
       const collect = (item, field, level = 0) => {
-        if (typeof item === 'string') parts.push(['Html', 'Description', 'Instructions', 'Body', 'Content'].includes(field) ? htmlContent(item).text : item);
+        if (typeof item === 'number') parts.push(`${field}: ${item}`);
+        else if (typeof item === 'string') parts.push(['Html', 'Description', 'Instructions', 'Body', 'Content'].includes(field) ? htmlContent(item).text : item);
         else if (item && typeof item === 'object' && !Array.isArray(item) && level < 3) {
           for (const [key, child] of Object.entries(item)) if (textFields.has(key)) collect(child, key, level + 1);
         }
       };
       for (const [key, child] of Object.entries(value)) if (textFields.has(key)) collect(child, key);
       const text = [...new Set(parts.filter(Boolean))].join('\n').slice(0, 1_000_000);
-      if (text) sources.push({ id: `${row.key}#${sources.length}`, course: String(row.course),
+      if (text) sources.push({ id: `${row.key}#${path}`, course: String(row.course),
         courseName: allowed.get(String(row.course)).name, title, text, category: row.category,
         lastSuccess: row.last_success, checkedAt: row.checked_at, stale: row.outcome !== 'available',
-        dueDate: ['assignments', 'quizzes', 'calendar', 'calendar_occurrences'].includes(row.category) && Number.isFinite(Date.parse(value.DueDate)) ? value.DueDate : null,
+        dueDate: ['assignments', 'quizzes', 'quiz_details', 'calendar', 'calendar_occurrences'].includes(row.category) && Number.isFinite(Date.parse(value.DueDate)) ? value.DueDate : null,
         publishedAt: row.category === 'announcements' ? value.PublishedDate || value.StartDate || null : null,
         url: `${origin}/d2l/home/${row.course}` });
       for (const [key, child] of Object.entries(value)) {
-        if (!textFields.has(key) && child && typeof child === 'object') visit(child, title, depth + 1);
+        if (!textFields.has(key) && child && typeof child === 'object') visit(child, title, depth + 1, `${path}/${key}`);
       }
     };
     visit(row.data);
   }
-  return { courses, sources, assignments: projectAssignments(rows, courses, origin), state };
+  return { courses, sources, assignments, state };
 }
 
 export function homeInventory(inventory, now = Date.now()) {
