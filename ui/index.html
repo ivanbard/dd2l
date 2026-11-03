@@ -41,7 +41,7 @@
           <select id="model" name="model" aria-describedby="search-help"><option value="">Local search</option></select>
           <span id="model-loading" class="loading-slot"></span>
         </div>
-        <span id="search-help" class="sr-only">Find source excerpts by keyword, or connect ChatGPT in Settings to ask a question.</span>
+        <span id="search-help" class="sr-only">Describe an assignment and course to open its workspace, search by keyword, or connect ChatGPT in Settings for explanations.</span>
       </form>
       <p id="model-sharing" class="model-sharing" hidden>Sending with this model shares your question and matching coursework with OpenAI.</p>
       <p id="notice" class="notice" role="status" hidden></p>
@@ -54,6 +54,7 @@
       <div id="widget-grid" class="widget-grid"></div>
       <p id="widget-status" class="widget-status" role="status"></p>
     </section>
+    <section id="assignment-workspace" class="results assignment-workspace" aria-labelledby="assignment-heading" hidden></section>
     <section id="ai-answer" class="results" aria-label="AI answer" hidden>
       <h2 id="ai-answer-title" tabindex="-1">Your answer</h2><p id="answer-text"></p>
       <div id="answer-view" class="answer-view" hidden></div>

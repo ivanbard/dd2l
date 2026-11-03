@@ -1,10 +1,12 @@
 import { createWidgets } from './widgets.js';
 import { renderAnswerView } from './answer-renderer.js';
 import { startLoading } from './loading.js';
+import { renderAssignmentWorkspace } from './assignment-workspace.js';
 
 const $ = id => document.getElementById(id);
 const refreshWidgets = createWidgets(async (course, title) => {
   try { await load(); } catch (error) { notice(error.message); return; }
+  showAssignment(null);
   $('course').value = course;
   $('prompt').value = title;
   search(!title);
@@ -13,6 +15,7 @@ let status;
 let courses = [];
 let request;
 let aiRequest;
+let assignmentContext;
 let finishPromptLoading = () => {};
 
 function element(tag, text, className) {
@@ -93,9 +96,17 @@ async function askAI() {
   $('results').hidden = true;
   notice();
   try {
-    const data = await aiAction('answer', { q: $('prompt').value.trim(), course: $('course').value, model: $('model').value, consent: true }, current.signal);
+    const local = await api(`/api/search?${searchParams($('prompt').value.trim())}`, current.signal);
+    if (aiRequest !== current) return;
+    showAssignment(local.workspace, local.demo);
+    if (local.workspace && local.workspace.status !== 'resolved') { $('assignment-heading').focus(); return; }
+    const data = await aiAction('answer', { q: $('prompt').value.trim(), course: $('course').value, assignment: assignmentContext?.id || '', model: $('model').value, consent: true }, current.signal);
     if (aiRequest !== current) return;
     $('workspace').classList.add('has-results');
+    if (data.workspace) {
+      showAssignment(data.workspace, false);
+      if (data.workspace.status !== 'resolved') { $('assignment-heading').focus(); return; }
+    }
     $('answer-text').textContent = data.answer;
     const rendered = renderAnswerView($('answer-view'), data.view, data.sources);
     $('answer-view').hidden = !rendered || !data.view.sections.length;
@@ -108,7 +119,7 @@ async function askAI() {
       article.tabIndex = -1;
       article.append(element('h3', `[${i + 1}] ${source.title}`), element('p', source.excerpt),
         element('p', `${source.courseName} · ${source.stale ? 'Stale cache' : 'Cached'} · ${date(source.lastSuccess)}`, 'source-meta'));
-      const link = element('a', 'Open course in onQ ↗');
+      const link = element('a', source.url.includes('/dropbox/') ? 'Open assignment in Brightspace ↗' : 'Open course in Brightspace ↗');
       link.href = source.url;
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
@@ -149,6 +160,7 @@ async function load() {
 
 function reset() {
   clearAnswer();
+  showAssignment(null);
   $('prompt').value = '';
   $('model').value = '';
   updateComposer();
@@ -156,6 +168,21 @@ function reset() {
   $('result-list').replaceChildren();
   $('workspace').classList.remove('has-results');
   $('prompt').focus();
+}
+
+function searchParams(query) {
+  return new URLSearchParams({ q: query, course: $('course').value, assignment: assignmentContext?.course === $('course').value ? assignmentContext.id : '' });
+}
+
+function showAssignment(workspace, demo = false) {
+  assignmentContext = workspace?.status === 'resolved' ? { id: workspace.id, course: workspace.course } : undefined;
+  if (assignmentContext) $('course').value = assignmentContext.course;
+  renderAssignmentWorkspace($('assignment-workspace'), workspace, demo, choice => {
+    assignmentContext = { id: choice.id, course: choice.course };
+    $('course').value = choice.course;
+    if ($('model').value) askAI(); else search();
+  });
+  if (workspace) $('workspace').classList.add('has-results');
 }
 
 async function search(browse = false) {
@@ -167,8 +194,14 @@ async function search(browse = false) {
   setBusy(true);
   notice();
   try {
-    const data = await api(`/api/search?${new URLSearchParams({ q: browse ? '' : query, course: $('course').value })}`, current.signal);
+    const data = await api(`/api/search?${searchParams(browse ? '' : query)}`, current.signal);
     if (request !== current) return;
+    showAssignment(data.workspace, data.demo);
+    if (data.workspace) {
+      $('results').hidden = true;
+      $('assignment-heading').focus();
+      return;
+    }
     $('workspace').classList.add('has-results');
     $('results').hidden = false;
     $('results-title').textContent = browse ? 'Course materials' : 'Search results';
@@ -220,6 +253,7 @@ async function showCourses() {
       button.type = 'button';
       button.append(element('small', course.active ? 'Active course' : 'Historical course'));
       button.addEventListener('click', () => {
+        showAssignment(null);
         $('course').value = course.id;
         $('prompt').value = '';
         $('panel').close();
@@ -241,7 +275,7 @@ async function showStatus() {
       element('p', status.demo ? 'Demo mode · fictional sample coursework. No school account is connected to this view.' : 'Local inventory · read-only. Local search stays on this device. Selecting a ChatGPT model and sending a question shares matching coursework with OpenAI.'),
       element('p', `${status.courseCount} courses · ${status.sourceCount} searchable sources`),
       element('p', `Connector: ${status.state?.state || 'Not synced'} · Last successful source: ${date(status.lastSuccess)}`),
-      element('p', 'Search uses keywords and cached excerpts. Missing sources and access restrictions mean coverage may be incomplete.'),
+      element('p', 'Describe an assignment and course to gather its cached records. Other searches match keywords. Missing sources and access restrictions mean coverage may be incomplete.'),
       element('p', 'Setup and start collect coursework automatically while the terminal stays open.'),
       element('p', 'If sign-in has expired, stop the app and run npx @ivanbard/dd2l setup (npm run setup from source). For later launches use npx @ivanbard/dd2l start (npm start -- start from source). Reopen Courses or search again to read the latest cache.'),
     );
@@ -286,7 +320,7 @@ async function showStatus() {
 $('prompt').addEventListener('input', clearAnswer);
 $('model').addEventListener('change', () => { clearAnswer(); notice(); });
 $('search-form').addEventListener('submit', event => { event.preventDefault(); if ($('model').value) askAI(); else search(); });
-$('course').addEventListener('change', () => { const browsing = !$('results').hidden || !$('busy').hidden; clearAnswer(); if (browsing && !$('model').value) search(!$('prompt').value.trim()); });
+$('course').addEventListener('change', () => { const browsing = !$('results').hidden || !$('assignment-workspace').hidden || !$('busy').hidden; clearAnswer(); showAssignment(null); if (browsing && !$('model').value) search(!$('prompt').value.trim()); });
 $('new-chat').addEventListener('click', reset);
 $('search-nav').addEventListener('click', () => $('prompt').focus());
 $('courses-nav').addEventListener('click', showCourses);

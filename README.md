@@ -12,6 +12,22 @@ your materials, and ask questions with sources.
 - search the local cache, browse sources, and customize your home screen widgets
 - optionally connect ChatGPT for answers grounded in matching course excerpts
 
+Describe a task such as **“I'm working on Assignment 2 for ELEC 425”** to open
+an assignment workspace. It brings together cached instructions, attachments,
+rubric, due and availability dates, submission status, and related course
+references, with a link to the Brightspace submission dropbox. If several
+assignments match, choose one before continuing. Missing, inaccessible, and
+stale records are labelled explicitly.
+
+Follow-ups keep the selected assignment: **“Am I ready to submit?”** moves the
+rubric first; **“Explain criterion three”** keeps that rubric in context for a
+ChatGPT answer when a model is selected. Local mode opens the relevant records
+without an AI account. New search or changing course clears assignment context.
+Matching currently uses course codes, assignment numbers or titles, and explicit
+references in the instructions; broader requests still use keyword search.
+Collection is incremental, so a workspace may be incomplete until its records
+have synced. Cached submission records do not confirm current submission status.
+
 The connector is read-only. It does not submit work or change grades, posts,
 quiz attempts or completion states. Coverage depends on what onQ makes accessible.
 

@@ -6,6 +6,7 @@ import { parseArgs } from 'node:util';
 import { readInventory, searchInventory, homeInventory } from './ui-data.mjs';
 import { demoInventory } from './ui-demo.mjs';
 import { ChatGPT } from './llm.mjs';
+import { assignmentWorkspace, workspaceSources } from './assignment-workspace.mjs';
 
 const root = fileURLToPath(new URL('../ui/', import.meta.url));
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png' };
@@ -73,17 +74,20 @@ export function createUiServer({ demo = false, inventoryPath = join(process.env.
         else if (url.pathname === '/api/llm/select') send(200, await llm.select(data.id));
         else if (url.pathname === '/api/llm/logout') send(200, await llm.logout());
         else if (url.pathname === '/api/llm/answer') {
-          const { q, course = '', model, consent } = data;
+          const { q, course = '', assignment = '', model, consent } = data;
           if (typeof q !== 'string' || !q.trim() || q.length > 500 || typeof course !== 'string' || (course && !/^\d+$/.test(course)) || typeof model !== 'string' || !model || model.length > 200 || consent !== true) {
             send(400, { error: 'Provide a question, course, model and permission to send excerpts to OpenAI.' }); return;
           }
+          if (typeof assignment !== 'string' || (assignment && (!/^\d+$/.test(assignment) || !course))) { send(400, { error: 'Invalid assignment context.' }); return; }
           const inventory = readInventory(inventoryPath);
           if (course && !inventory.courses.some(c => c.id === course)) { send(404, { error: 'Course is not available in this inventory.' }); return; }
-          const sources = searchInventory(inventory, q, course).results.slice(0, 8);
+          const workspace = assignmentWorkspace(inventory, q, course, assignment);
+          if (workspace && workspace.status !== 'resolved') { send(200, { workspace, sources: [] }); return; }
+          const sources = workspace ? workspaceSources(workspace) : searchInventory(inventory, q, course).results.slice(0, 8);
           const controller = new AbortController();
           const abort = () => controller.abort();
           res.on('close', abort);
-          try { send(200, { ...await llm.answer(q, model, sources, AbortSignal.any([controller.signal, AbortSignal.timeout(90_000)])), sources }); }
+          try { send(200, { ...await llm.answer(q, model, sources, AbortSignal.any([controller.signal, AbortSignal.timeout(90_000)])), sources, workspace }); }
           finally { res.off('close', abort); }
         } else send(404, { error: 'Not found.' });
         return;
@@ -93,6 +97,8 @@ export function createUiServer({ demo = false, inventoryPath = join(process.env.
         if (!['/api/status', '/api/courses', '/api/search', '/api/home'].includes(url.pathname)) { send(404, { error: 'Not found.' }); return; }
         const query = url.searchParams.get('q') || '';
         const course = url.searchParams.get('course') || '';
+        const assignment = url.searchParams.get('assignment') || '';
+        if (assignment && (!/^\d+$/.test(assignment) || !course)) { send(400, { error: 'Invalid assignment context.' }); return; }
         if (query.length > 500 || (course && !/^\d+$/.test(course))) { send(400, { error: 'Use a query of at most 500 characters and a valid course.' }); return; }
         const inventory = demo ? demoInventory() : readInventory(inventoryPath);
         if (course && !inventory.courses.some(item => item.id === course)) { send(404, { error: 'Course is not available in this inventory.' }); return; }
@@ -101,11 +107,11 @@ export function createUiServer({ demo = false, inventoryPath = join(process.env.
           lastSuccess: inventory.sources.map(source => source.lastSuccess).filter(Boolean).sort().at(-1) || null });
         else if (url.pathname === '/api/home') send(200, { ...homeInventory(inventory), demo });
         else if (url.pathname === '/api/courses') send(200, { courses: inventory.courses });
-        else send(200, { ...searchInventory(inventory, query, course), demo });
+        else send(200, { ...searchInventory(inventory, query, course), workspace: query ? assignmentWorkspace(inventory, query, course, assignment) : null, demo });
         return;
       }
       const path = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-      if (!/^(?:index\.html|app\.js|widgets\.js|widget-layout\.js|answer-view\.js|answer-renderer\.js|loading\.js|style\.css|assets\/[a-z-]+\.(?:svg|png))$/.test(path)) { send(404, { error: 'Not found.' }); return; }
+      if (!/^(?:index\.html|app\.js|widgets\.js|widget-layout\.js|assignment-workspace\.js|answer-view\.js|answer-renderer\.js|loading\.js|style\.css|assets\/[a-z-]+\.(?:svg|png))$/.test(path)) { send(404, { error: 'Not found.' }); return; }
       send(200, await readFile(join(root, path)), mime[extname(path)]);
     } catch (error) {
       send(error.code === 'ENOENT' ? 404 : 503, { error: error.public ? error.message : error.code === 'ENOENT' ? 'Not found.' : 'Local data or AI service is unavailable. Retry after the current operation finishes.' });

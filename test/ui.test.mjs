@@ -11,11 +11,11 @@ import { Store } from '../src/store.mjs';
 
 test('retrieval scopes sources, ranks titles, strips HTML and labels stale data', () => {
   const inventory = demoInventory();
-  assert.equal(inventory.courses.length, 2);
+  assert.equal(inventory.courses.length, 3);
   assert.equal(searchInventory(inventory, 'What is my recursion assignment?').results[0].title, 'Assignment 3 · Recursion');
   assert.equal(searchInventory(inventory, 'recursion', '102').total, 0);
   assert.equal(searchInventory(inventory, 'what are we looking for today').total, 0);
-  assert.equal(searchInventory(inventory, '').total, 5);
+  assert.equal(searchInventory(inventory, '').total, 10);
   assert.equal(searchInventory(inventory, 'nonexistenttopic').total, 0);
   const projected = projectInventory([
     { category: 'enrollments', data: [{ OrgUnit: { Id: 1, Name: 'Course' }, Access: { CanAccess: true } }] },

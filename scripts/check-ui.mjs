@@ -70,6 +70,39 @@ try {
   assert.match(await page.locator('#widget-deadlines').textContent(), /Assignment 3/);
   assert.match(await page.locator('#widget-announcements').textContent(), /Midterm review/);
   await page.screenshot({ path: '.dd2l/ui-home.png' });
+  // The core assignment workspace works locally, including ambiguity and follow-ups.
+  await page.locator('#prompt').fill('I am going to work on assignment 2');
+  await page.locator('#prompt').press('Enter');
+  await page.getByRole('heading', { name: 'Which assignment?', exact: true }).waitFor();
+  assert.equal(await page.locator('#assignment-workspace .course-item').count(), 2);
+  await page.locator('#assignment-workspace .course-item').filter({ hasText: 'ELEC 425' }).click();
+  await page.getByRole('heading', { name: 'Assignment 2 · Filter design', exact: true }).waitFor();
+  assert.equal(await page.locator('#course').inputValue(), '103');
+  assert.equal(await page.locator('#results').isVisible(), false);
+  assert.match(await page.locator('.assignment-overview').textContent(), /No submissions in the cached response/);
+  assert.match(await page.locator('[data-category="rubric"]').textContent(), /Validation/);
+  assert.match(await page.locator('[data-category="attachment"]').textContent(), /1 kHz/);
+  assert.match(await page.locator('[data-category="feedback"]').textContent(), /Not retrieved/);
+  assert.doesNotMatch(await page.locator('#assignment-workspace').textContent(), /Memory journal/);
+  await page.screenshot({ path: '.dd2l/ui-assignment-desktop.png', fullPage: true });
+  await page.locator('#prompt').fill('Am I ready to submit?');
+  await page.locator('#prompt').press('Enter');
+  await page.getByText('SUBMISSION CHECK', { exact: true }).waitFor();
+  assert.equal(await page.locator('.assignment-card').first().getAttribute('data-category'), 'rubric');
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.screenshot({ path: '.dd2l/ui-assignment-mobile.png', fullPage: true });
+  await page.locator('#prompt').fill('Explain criterion three');
+  await page.locator('#prompt').press('Enter');
+  await page.getByText('YOUR ASSIGNMENT', { exact: true }).waitFor();
+  assert.equal(await page.locator('.assignment-card').first().getAttribute('data-category'), 'rubric');
+  await page.locator('#prompt').fill('assignment 99');
+  await page.locator('#prompt').press('Enter');
+  await page.getByRole('heading', { name: 'Assignment not found', exact: true }).waitFor();
+  await page.locator('#new-chat').click();
+  assert.equal(await page.locator('#assignment-workspace').isVisible(), false);
+  await page.locator('#course').selectOption('');
+  await page.setViewportSize({ width: 1280, height: 832 });
   await page.locator('#customize-widgets').click();
   assert.equal(await page.locator('.widget-tools select').count(), 0);
   assert.equal(await page.getByRole('button', { name: /^Move Upcoming deadlines/ }).count(), 0);
@@ -136,8 +169,8 @@ try {
   await page.locator('#widget-deadlines.row-3').waitFor();
   await page.locator('#widget-deadlines.size-2x2').waitFor();
   await page.locator('#widget-shortcuts .shortcut-link').filter({ hasText: 'Assignment 3' }).click();
-  await page.locator('.source').first().waitFor();
-  assert.match(await page.locator('#result-list').textContent(), /Assignment 3/);
+  await page.getByRole('heading', { name: 'Assignment 3 · Recursion', exact: true }).waitFor();
+  assert.match(await page.locator('#assignment-workspace').textContent(), /Implement and test recursive functions/);
   await page.locator('#new-chat').click();
   await page.screenshot({ path: '.dd2l/ui-customized.png' });
   const searching = gate(); waits.set('/api/search', searching);
@@ -302,6 +335,38 @@ try {
   assert.equal(await page.locator('#model-sharing').isVisible(), false);
   await page.locator('#new-chat').click();
   await page.screenshot({ path: '.dd2l/ui-local-search-mobile.png' });
+  let workspaceCalls = 0;
+  await page.route('**/api/llm/answer', async route => {
+    workspaceCalls++;
+    const body = route.request().postDataJSON();
+    assert.equal(body.course, '103');
+    assert.equal(body.assignment, '202');
+    if (workspaceCalls > 1) {
+      await route.fulfill({ status: 503, json: { error: 'Provider unavailable. Your assignment is still available locally.' } });
+      return;
+    }
+    await route.fulfill({ json: { answer: 'The rubric includes validation worth 40 points [1].', sources: [{
+      title: 'Rubric', courseName: 'ELEC 425', excerpt: 'Validation: 40 points', lastSuccess: '2026-11-02T14:00:00Z',
+      url: 'https://onq.queensu.ca/d2l/lms/dropbox/user/folder_submit_files.d2l?db=202&ou=103',
+    }] } });
+  });
+  await page.locator('#course').selectOption('');
+  await page.locator('#model').selectOption('model');
+  await page.locator('#prompt').fill('assignment 2');
+  await page.locator('#prompt').press('Enter');
+  await page.getByRole('heading', { name: 'Which assignment?', exact: true }).waitFor();
+  assert.equal(workspaceCalls, 0);
+  await page.locator('#assignment-workspace .course-item').filter({ hasText: 'ELEC 425' }).click();
+  await page.getByText('The rubric includes validation worth 40 points [1].', { exact: true }).waitFor();
+  assert.equal(workspaceCalls, 1);
+  assert.equal(await page.locator('#assignment-workspace').isVisible(), true);
+  await page.locator('#prompt').fill('Explain criterion three');
+  await page.locator('#prompt').press('Enter');
+  await page.getByText('Provider unavailable. Your assignment is still available locally.', { exact: true }).waitFor();
+  assert.equal(workspaceCalls, 2);
+  assert.equal(await page.locator('#assignment-workspace').isVisible(), true);
+  assert.equal(await page.locator('#ai-answer').isVisible(), false);
+  await page.locator('#new-chat').click();
   await page.locator('#settings-nav').click();
   await page.getByRole('button', { name: 'Continue with ChatGPT', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Sign out of active ChatGPT account' }).waitFor();
@@ -338,7 +403,7 @@ try {
   await page.locator('.auth-return').click();
   await page.locator('#workspace').waitFor();
   assert.deepEqual(errors, []);
-  console.log('UI smoke passed: Origin Wave loading states, reduced motion, completion/error/cancel cleanup, widgets, generated answers, citations and responsive layouts.');
+  console.log('UI smoke passed: assignment workspaces, ambiguity, follow-ups, responsive layouts, loading/cancel cleanup, widgets, generated answers and citations.');
 } finally {
   await browser?.close();
   if (callbackServer) await new Promise(resolve => callbackServer.close(resolve));

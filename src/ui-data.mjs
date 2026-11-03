@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { htmlContent } from './documents.mjs';
 import { SCHOOL, schoolOrigin } from './client.mjs';
 import { createHash } from 'node:crypto';
+import { projectAssignments } from './assignment-workspace.mjs';
 
 const categories = new Set(['content', 'overview', 'syllabus_source', 'assignments', 'quizzes', 'announcements',
   'calendar', 'calendar_occurrences', 'content_file', 'assignment_file', 'linked_content', 'video_transcript']);
@@ -20,7 +21,7 @@ export function readInventory(path) {
     };
     const state = meta('state');
     const rows = db.prepare(`SELECT key,course,category,data,last_success,checked_at,outcome
-      FROM resources WHERE data IS NOT NULL AND outcome NOT IN ('denied','not_configured')`).all()
+      FROM resources`).all()
       .map(row => ({ ...row, data: JSON.parse(row.data) }));
     return { ...projectInventory(rows, state, meta('school_origin') ?? SCHOOL), scope: createHash('sha256').update(String(meta('account') || 'local')).digest('hex') };
   } catch (error) {
@@ -69,7 +70,7 @@ export function projectInventory(rows, state, origin = SCHOOL) {
     };
     visit(row.data);
   }
-  return { courses, sources, state };
+  return { courses, sources, assignments: projectAssignments(rows, courses, origin), state };
 }
 
 export function homeInventory(inventory, now = Date.now()) {
