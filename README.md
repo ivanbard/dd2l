@@ -1,5 +1,7 @@
 # dd2l
 
+i am not the biggest fan of D2L Brightspace, and sometimes wish i could get what im looking for without digging through 14 menus that differ from course to course. to solve that i made dd2l, a dynamic companion app to D2L Brightspace that does what you need, and adapts to your needs with time.
+
 dd2l is a local student companion for Queen's onQ. Sync your courses, search
 your materials, and ask questions with sources.
 
@@ -12,6 +14,10 @@ your materials, and ask questions with sources.
 
 The connector is read-only. It does not submit work or change grades, posts,
 quiz attempts or completion states. Coverage depends on what onQ makes accessible.
+
+## School not listed?
+If your school/educational faculty uses D2L Brightspace and is not available during setup, please open an issue in the GitHub repo with some details as to your 
+provider's Brightspace link and faculty name. Feel free to also create a PR if you have added your own solution to your school not being listed.
 
 ## Run
 
