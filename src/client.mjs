@@ -1,5 +1,15 @@
 export const SCHOOL = 'https://onq.queensu.ca';
 
+export function schoolOrigin(value) {
+  const message = 'Enter a valid Brightspace address (HTTPS only, no embedded username or password).';
+  if (typeof value !== 'string' || /[\u0000-\u0020\u007f\\]/.test(value.trim())) throw new Error(message);
+  const address = value.trim().replace(/^\/\//, '');
+  let url;
+  try { url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(address) ? address : `https://${address}`); } catch { throw new Error(message); }
+  if (url.protocol !== 'https:' || url.username || url.password) throw new Error(message);
+  return url.origin;
+}
+
 export class AccessError extends Error {
   constructor(code, message, { status, retryAfter = 0 } = {}) {
     super(message);
@@ -63,8 +73,7 @@ export function apiUrl(origin, path) {
 export class BrightspaceClient {
   constructor(session, { origin = SCHOOL, fetchImpl = fetch } = {}) {
     this.session = session;
-    this.origin = new URL(origin).origin;
-    if (!this.origin.startsWith('https://')) throw new Error('School origin must use HTTPS.');
+    this.origin = schoolOrigin(origin);
     this.fetch = fetchImpl;
   }
 

@@ -143,7 +143,7 @@ async function load() {
     $('course').replaceChildren(new Option('All courses', ''), ...courses.map(course => new Option(course.name, course.id)));
     if (courses.some(course => course.id === selected)) $('course').value = selected;
     $('demo-badge').hidden = !status.demo;
-    if (!courses.length) notice('No cached courses yet. If setup or start is running, collection is in progress. Otherwise run npx dd2l setup (npm run setup from source).');
+    if (!courses.length) notice('No cached courses yet. If setup or start is running, collection is in progress. Otherwise run npx @ivanbard/dd2l setup (npm run setup from source).');
   } finally { finish(); }
 }
 
@@ -227,7 +227,7 @@ async function showCourses() {
       });
       $('panel-body').append(button);
     }
-    if (!courses.length) $('panel-body').append(element('p', 'No cached courses yet. Let setup finish collecting, then reopen Courses. To connect onQ, run npx dd2l setup (npm run setup from source).'));
+    if (!courses.length) $('panel-body').append(element('p', 'No cached courses yet. Let setup finish collecting, then reopen Courses. To connect onQ, run npx @ivanbard/dd2l setup (npm run setup from source).'));
   } catch (error) { $('panel-body').replaceChildren(element('p', error.message)); }
   finally { finish(); }
 }
@@ -243,7 +243,7 @@ async function showStatus() {
       element('p', `Connector: ${status.state?.state || 'Not synced'} · Last successful source: ${date(status.lastSuccess)}`),
       element('p', 'Search uses keywords and cached excerpts. Missing sources and access restrictions mean coverage may be incomplete.'),
       element('p', 'Setup and start collect coursework automatically while the terminal stays open.'),
-      element('p', 'If sign-in has expired, stop the app and run npx dd2l setup (npm run setup from source). For later launches use npx dd2l start (npm start -- start from source). Reopen Courses or search again to read the latest cache.'),
+      element('p', 'If sign-in has expired, stop the app and run npx @ivanbard/dd2l setup (npm run setup from source). For later launches use npx @ivanbard/dd2l start (npm start -- start from source). Reopen Courses or search again to read the latest cache.'),
     );
     const connection = await api('/api/llm/status');
     $('panel-body').append(element('h3', 'Use your ChatGPT plan'));

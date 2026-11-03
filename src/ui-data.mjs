@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { htmlContent } from './documents.mjs';
-import { SCHOOL } from './client.mjs';
+import { SCHOOL, schoolOrigin } from './client.mjs';
 import { createHash } from 'node:crypto';
 
 const categories = new Set(['content', 'overview', 'syllabus_source', 'assignments', 'quizzes', 'announcements',
@@ -22,7 +22,7 @@ export function readInventory(path) {
     const rows = db.prepare(`SELECT key,course,category,data,last_success,checked_at,outcome
       FROM resources WHERE data IS NOT NULL AND outcome NOT IN ('denied','not_configured')`).all()
       .map(row => ({ ...row, data: JSON.parse(row.data) }));
-    return { ...projectInventory(rows, state), scope: createHash('sha256').update(String(meta('account') || 'local')).digest('hex') };
+    return { ...projectInventory(rows, state, meta('school_origin') ?? SCHOOL), scope: createHash('sha256').update(String(meta('account') || 'local')).digest('hex') };
   } catch (error) {
     if (error.code === 'ERR_SQLITE_ERROR' && /unable to open database/.test(error.message)) {
       return { courses: [], sources: [], state: null };
@@ -31,7 +31,8 @@ export function readInventory(path) {
   } finally { db?.close(); }
 }
 
-export function projectInventory(rows, state) {
+export function projectInventory(rows, state, origin = SCHOOL) {
+  origin = schoolOrigin(origin);
   const enrollment = rows.find(row => row.category === 'enrollments' && !['denied', 'not_configured'].includes(row.outcome));
   const courses = (enrollment?.data ?? []).filter(item => item.Access?.CanAccess === true && item.OrgUnit?.Id)
     .map(item => ({ id: String(item.OrgUnit.Id), name: item.OrgUnit.Name || `Course ${item.OrgUnit.Id}`,
@@ -61,7 +62,7 @@ export function projectInventory(rows, state) {
         lastSuccess: row.last_success, checkedAt: row.checked_at, stale: row.outcome !== 'available',
         dueDate: ['assignments', 'quizzes', 'calendar', 'calendar_occurrences'].includes(row.category) && Number.isFinite(Date.parse(value.DueDate)) ? value.DueDate : null,
         publishedAt: row.category === 'announcements' ? value.PublishedDate || value.StartDate || null : null,
-        url: `${SCHOOL}/d2l/home/${row.course}` });
+        url: `${origin}/d2l/home/${row.course}` });
       for (const [key, child] of Object.entries(value)) {
         if (!textFields.has(key) && child && typeof child === 'object') visit(child, title, depth + 1);
       }

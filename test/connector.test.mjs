@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AccessError, BrightspaceClient, SCHOOL, apiUrl, request, readJson } from '../src/client.mjs';
+import { AccessError, BrightspaceClient, SCHOOL, schoolOrigin, apiUrl, request, readJson } from '../src/client.mjs';
 import { Session, protect } from '../src/session.mjs';
 import { Store, lock, withoutCredentials } from '../src/store.mjs';
 import { Connector, sync } from '../src/connector.mjs';
@@ -15,6 +15,44 @@ const credentials = () => ({ origin: SCHOOL, identity, csrf: 'fake-xsrf',
   cookies: [{ name: 'session', value: 'fake-cookie', domain: 'onq.queensu.ca', path: '/', expires: -1 }],
   token: 'old-token', expiresAt: Date.now() + 3600_000 });
 const memoryCrypt = async bytes => bytes;
+
+test('custom school URLs default to HTTPS, reject unsafe input and normalize pasted course links', () => {
+  assert.equal(schoolOrigin(' https://School.Example/d2l/home/42?token=private#section '), 'https://school.example');
+  assert.equal(schoolOrigin('https://school.example:8443/'), 'https://school.example:8443');
+  for (const value of ['school.example', ' School.Example/d2l/home/42?next=https://example.test ', '//school.example']) {
+    assert.equal(schoolOrigin(value), 'https://school.example');
+  }
+  assert.equal(schoolOrigin('school.example:8443/d2l/home'), 'https://school.example:8443');
+  for (const value of ['', undefined, 'http://school.example', 'ftp://school.example', 'javascript:alert(1)',
+    'https://user:password@school.example', 'user:password@school.example',
+    'https://school.example\n.evil.example', 'https://school.example\\@evil.example']) {
+    assert.throws(() => schoolOrigin(value), /valid Brightspace/);
+  }
+});
+
+test('a saved custom school resumes with its own session and never receives another school session', async t => {
+  const directory = await temporary(t);
+  const origin = 'https://school.example';
+  const store = new Store(directory);
+  store.commit(identity, origin, [], {}, { complete: true, data: [] });
+  store.close();
+  const reopened = new Store(directory);
+  try {
+    assert.equal(reopened.getMeta('school_origin'), origin);
+    const session = new Session(directory, { origin, crypt: memoryCrypt });
+    await session.save({ ...credentials(), origin, cookies: [{ name: 'session', value: 'custom-cookie', domain: 'school.example', path: '/', expires: -1 }] });
+    const restarted = new Session(directory, { origin: reopened.getMeta('school_origin'), crypt: memoryCrypt });
+    const client = new BrightspaceClient(restarted, { origin, fetchImpl: async (url, options) => {
+      assert.equal(new URL(url).origin, origin);
+      assert.equal(options.headers.authorization, 'Bearer old-token');
+      return json({ Identifier: '7' });
+    } });
+    assert.deepEqual(await client.get('/d2l/api/lp/1.0/users/whoami'), { Identifier: '7' });
+    await assert.rejects(new Session(directory, { origin: SCHOOL, crypt: memoryCrypt }).load(), { code: 'needs_login' });
+    assert.throws(() => reopened.commit(identity, SCHOOL, [], {}, { complete: true, data: [] }), /another school account/);
+    assert.equal(reopened.getMeta('school_origin'), origin);
+  } finally { reopened.close(); }
+});
 
 async function temporary(t) {
   const directory = await mkdtemp(join(tmpdir(), 'dd2l-test-'));

@@ -1,11 +1,48 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EventEmitter } from 'node:events';
+import { EventEmitter, once } from 'node:events';
 import { createServer } from 'node:http';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync, spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { mkdtemp, rm, access } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stripVTControlCharacters } from 'node:util';
 import { runApp } from '../src/app-runner.mjs';
+
+test('school selection and custom URL entry can be cancelled without creating school data',
+  { skip: process.platform !== 'win32', timeout: 10_000 }, async t => {
+    const directory = await mkdtemp(join(tmpdir(), 'dd2l-school-menu-'));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    for (const keys of ['\u001b[B\r', '\u0003']) {
+      const child = spawn(process.execPath, ['--input-type=module', '-e', `
+        process.stdin.isTTY = true;
+        process.stdin.setRawMode = () => {};
+        process.stdout.isTTY = true;
+        await import(${JSON.stringify(new URL('../src/cli.mjs', import.meta.url).href)});
+      `, 'setup'], { env: { ...process.env, LOCALAPPDATA: directory }, stdio: ['pipe', 'pipe', 'pipe'] });
+      t.after(() => { if (child.exitCode === null) child.kill(); });
+      let output = '';
+      let sent = false;
+      let urlCancelled = false;
+      child.stdout.on('data', chunk => {
+        output += chunk;
+        if (!sent && stripVTControlCharacters(output).includes('Enter: confirm')) { sent = true; child.stdin.write(keys); }
+        if (!urlCancelled && output.includes('Your school\'s Brightspace URL')) {
+          urlCancelled = true;
+          child.stdin.write('\u0003');
+        }
+        if (/Setup cancelled/.test(output)) child.stdin.end();
+      });
+      const [code] = await once(child, 'close');
+      assert.equal(code, 0);
+      assert.match(output, /Queen's University/);
+      assert.match(output, /Setup cancelled/);
+      if (keys !== '\u0003') assert.match(output, /Your school's Brightspace URL/);
+      await assert.rejects(access(join(directory, 'dd2l')), { code: 'ENOENT' });
+    }
+  });
 
 test('combined app opens a loopback UI, syncs all courses and shuts down cleanly', async () => {
   const server = createServer((req, res) => res.end('ready'));
@@ -54,6 +91,19 @@ test('occupied port fails before opening a browser or reading school data', asyn
   } finally { await new Promise(resolve => occupied.close(resolve)); }
 });
 
+test('failed report persistence closes the UI without claiming coursework was saved', async () => {
+  const server = createServer();
+  const signals = new EventEmitter();
+  const logs = [];
+  await assert.rejects(runApp({ store: { meta() {} }, audit: async () => ({ retryAfter: 0 }) }, {
+    server, signals, port: 0, open: async () => {}, log: message => logs.push(message),
+    onUpdate: async () => { throw new Error('Disk full'); },
+  }), /Disk full/);
+  assert.ok(!logs.some(message => message.includes('Coursework saved')));
+  assert.equal(server.listening, false);
+  assert.equal(signals.listenerCount('SIGINT'), 0);
+});
+
 test('npm binary exposes setup and rejects unattended setup', () => {
   const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));
   assert.equal(manifest.bin.dd2l, 'bin/dd2l.mjs');
@@ -61,6 +111,7 @@ test('npm binary exposes setup and rejects unattended setup', () => {
   const help = execFileSync(process.execPath, [bin, '--help'], { encoding: 'utf8' });
   assert.match(help, /dd2l setup/);
   assert.match(help, /dd2l start/);
+  assert.match(help, /npx @ivanbard\/dd2l/);
   const result = spawnSync(process.execPath, [bin, 'setup'], { encoding: 'utf8' });
   assert.equal(result.status, 1);
   assert.match(result.stderr, process.platform === 'win32' ? /interactive terminal/ : /requires Windows/);

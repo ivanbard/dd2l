@@ -6,14 +6,22 @@ The connector signs in using your installed Google Chrome browser, reuses a prot
 
 ## Run
 
+Setup lists Queen's onQ and lets you enter another school's HTTPS Brightspace
+URL. The `https://` prefix is optional and added automatically. Pasted course URLs are reduced to their site origin; credentials embedded
+in a URL are rejected. The selected site is saved after successful sign-in and
+reused by subsequent connector commands and cached source links. Existing
+Queen's installations keep working without setup changes. Other schools remain
+unverified; use the issue link shown during setup to request official support.
+Stop the worker and run `logout` before switching accounts or schools.
+
 The guided source-checkout path is `npm ci`, then `npm run setup`. Setup asks
 before connecting onQ, completes school sign-in, opens the UI, and runs sync in
 the same terminal. Use `npm start -- start` on later launches. Keep the terminal
 open; Ctrl+C stops both. If sign-in expires, rerun setup. Collection remains
 incremental, with the same batching and 15-minute cadence described below.
 
-The npm package exposes `dd2l setup` and `dd2l start` (or `npx dd2l setup` and
-`npx dd2l start` without a global install) once published. It has no interactive
+The npm package exposes `dd2l setup` and `dd2l start` (or `npx @ivanbard/dd2l setup` and
+`npx @ivanbard/dd2l start` without a global install) once published. It has no interactive
 install hook. The repository has not been published by this setup change.
 
 For manual operation:

@@ -16,8 +16,13 @@ The connector is read-only. It does not submit work or change grades, posts,
 quiz attempts or completion states. Coverage depends on what onQ makes accessible.
 
 ## School not listed?
-If your school/educational faculty uses D2L Brightspace and is not available during setup, please open an issue in the GitHub repo with some details as to your 
-provider's Brightspace link and faculty name. Feel free to also create a PR if you have added your own solution to your school not being listed.
+Choose **My school isn't listed** during setup and paste your school's
+Brightspace address; `https://` is added if omitted. dd2l uses that site for sign-in, syncing, and source links, and
+remembers it for later launches. Other schools have not been verified; their
+authentication or API access may differ. You can also [open an issue](https://github.com/ivanbard/dd2l/issues/new)
+with your school name and Brightspace URL to help add official support.
+Stop dd2l and run `dd2l logout` before switching schools; this deletes its saved
+school session and coursework cache.
 
 ## Run
 
@@ -25,7 +30,7 @@ Requires Windows, Node.js 24 or newer, and Google Chrome. This repository includ
 an npm CLI; the commands below work once the package is published to npm:
 
 ```powershell
-npx dd2l setup
+npx @ivanbard/dd2l setup
 ```
 
 Setup explains local storage, asks before connecting onQ, opens Chrome for school
@@ -34,10 +39,10 @@ one terminal open; Ctrl+C stops both the app and sync. The initial view may be
 empty while collection runs. Collection advances through up to five courses per
 pass every 15 minutes, so the first pass is not a complete download.
 
-Next time, run `npx dd2l start`. If the school session expires, stop the app and
-run `npx dd2l setup` again. Optional ChatGPT sign-in is in Settings.
+Next time, run `npx @ivanbard/dd2l start`. If the school session expires, stop the app and
+run `npx @ivanbard/dd2l setup` again. Optional ChatGPT sign-in is in Settings.
 
-Alternatively, install globally with `npm install -g dd2l`, then use `dd2l setup`
+Alternatively, install globally with `npm install -g @ivanbard/dd2l`, then use `dd2l setup`
 and `dd2l start`. Installation itself does not open browsers or connect accounts;
 setup runs explicitly in an interactive terminal.
 

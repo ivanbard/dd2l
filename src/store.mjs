@@ -71,6 +71,7 @@ export class Store {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       this.meta('account', account);
+      this.meta('school_origin', origin);
       for (const raw of observations) {
         const observation = withoutCredentials(raw);
         const successful = observation.outcome === 'available' && observation.complete !== false;

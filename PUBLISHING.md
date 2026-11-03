@@ -12,10 +12,9 @@ does not publish anything.
 3. Run `npm login --registry=https://registry.npmjs.org/` and complete the browser
    flow. Confirm the account with `npm whoami --registry=https://registry.npmjs.org/`.
 
-The public registry returned no package named `dd2l` on November 3, 2026. This
-does not reserve the name or guarantee npm will accept it. If it becomes
-unavailable, choose a scoped name before publishing and update the install
-instructions to match.
+The package is named `@ivanbard/dd2l`. npm rejected the unscoped `dd2l` name
+because it resembles an existing package. Publish with the npm account that owns
+the `@ivanbard` scope. The installed binary is still named `dd2l`.
 
 ## First release, after the security audit
 
@@ -43,11 +42,11 @@ errors must be resolved through npm; local checks cannot prevent those.
 After success, verify:
 
 ```powershell
-npm view dd2l@0.1.0 version bin --json --registry=https://registry.npmjs.org/
-npx --yes dd2l@0.1.0 --help
+npm view @ivanbard/dd2l@0.1.0 version bin --json --registry=https://registry.npmjs.org/
+npx --yes @ivanbard/dd2l@0.1.0 --help
 ```
 
-Users can then run `npx dd2l setup`. The GitHub repository's visibility and an
+Users can then run `npx @ivanbard/dd2l setup`. The GitHub repository's visibility and an
 npm release are separate; making one public does not publish the other.
 
 ## Later releases

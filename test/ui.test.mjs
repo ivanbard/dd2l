@@ -51,6 +51,7 @@ test('live inventory is read-only and reflects sync revocations and missing cach
     ], {}, enrollments);
     const before = store.resource('file');
     assert.equal(searchInventory(readInventory(path), 'memory').total, 1);
+    assert.equal(readInventory(path).sources[0].url, 'https://example.test/d2l/home/42');
     assert.deepEqual(store.resource('file'), before);
     store.commit({ Identifier: 7 }, 'https://example.test', [], {}, { complete: true, data: [] });
     assert.equal(searchInventory(readInventory(path), 'memory').total, 0);
