@@ -19,8 +19,9 @@ quiz attempts or completion states. Coverage depends on what onQ makes accessibl
 Choose **My school isn't listed** during setup and paste your school's
 Brightspace address; `https://` is added if omitted. dd2l uses that site for sign-in, syncing, and source links, and
 remembers it for later launches. Other schools have not been verified; their
-authentication or API access may differ. You can also [open an issue](https://github.com/ivanbard/dd2l/issues/new)
-with your school name and Brightspace URL to help add official support.
+authentication or API access may differ. You can also [report a missing school](https://github.com/ivanbard/dd2l/issues/new?template=missing-url.yml)
+using the guided issue form. Include your school's name and Brightspace URL if
+known to help add official support.
 Stop dd2l and run `dd2l logout` before switching schools; this deletes its saved
 school session and coursework cache.
 
