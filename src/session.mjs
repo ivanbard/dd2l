@@ -42,12 +42,12 @@ export class Session {
     let encrypted;
     try { encrypted = await readFile(this.path); }
     catch (error) {
-      if (error.code === 'ENOENT') throw new AccessError('needs_login', 'Run npm run login to sign in.');
+      if (error.code === 'ENOENT') throw new AccessError('needs_login', 'Run npx dd2l setup (npm run setup from source) to sign in.');
       throw error;
     }
     let value;
     try { value = JSON.parse((await this.crypt(encrypted, true)).toString()); }
-    catch { throw new AccessError('needs_login', 'Saved session could not be unlocked. Run npm run login.'); }
+    catch { throw new AccessError('needs_login', 'Saved session could not be unlocked. Run npx dd2l setup (npm run setup from source).'); }
     if (value.origin !== this.origin || !Array.isArray(value.cookies) || !value.csrf || !value.identity?.Identifier) {
       throw new AccessError('needs_login', 'Saved session does not match this school or is incomplete.');
     }
@@ -83,7 +83,7 @@ async function mintSession(origin, value, fetchImpl) {
         (!cookie.expires || cookie.expires === -1 || cookie.expires > Date.now() / 1000) &&
         (cookie.path === '/' || '/d2l/lp/auth/oauth2/token'.startsWith(cookie.path));
     });
-    if (!cookies.length) throw new AccessError('needs_login', 'School session has expired. Run npm run login.');
+    if (!cookies.length) throw new AccessError('needs_login', 'School session has expired. Run npx dd2l setup (npm run setup from source).');
     const payload = await readJson(await request(`${origin}/d2l/lp/auth/oauth2/token`, {
       method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded',
         cookie: cookies.map(c => `${c.name}=${c.value}`).join('; '), 'x-csrf-token': value.csrf },

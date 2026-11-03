@@ -21,18 +21,35 @@ provider's Brightspace link and faculty name. Feel free to also create a PR if y
 
 ## Run
 
-Requires Windows, Node.js 24 or newer, and Google Chrome. From this directory:
+Requires Windows, Node.js 24 or newer, and Google Chrome. This repository includes
+an npm CLI; the commands below work once the package is published to npm:
+
+```powershell
+npx dd2l setup
+```
+
+Setup explains local storage, asks before connecting onQ, opens Chrome for school
+sign-in and MFA, then opens the app and starts collecting coursework. Keep that
+one terminal open; Ctrl+C stops both the app and sync. The initial view may be
+empty while collection runs. Collection advances through up to five courses per
+pass every 15 minutes, so the first pass is not a complete download.
+
+Next time, run `npx dd2l start`. If the school session expires, stop the app and
+run `npx dd2l setup` again. Optional ChatGPT sign-in is in Settings.
+
+Alternatively, install globally with `npm install -g dd2l`, then use `dd2l setup`
+and `dd2l start`. Installation itself does not open browsers or connect accounts;
+setup runs explicitly in an interactive terminal.
+
+To run the current source checkout before publication:
 
 ```powershell
 npm ci
-npm run login
-npm run audit -- --all
-npm run ui
+npm run setup
 ```
 
-Open the local URL printed in the terminal. To keep collecting course data,
-run `npm run sync -- --all` in a separate terminal. Leave it running; if your
-school session expires, sign in again and restart sync.
+On later launches use `npm start -- start`. The individual `login`, `audit`,
+`sync`, and `npm run ui` commands remain available for manual operation.
 
 Or try fictional data without a school login:
 
@@ -50,7 +67,8 @@ For AI answers, connect ChatGPT in Settings and choose a model below the prompt.
 Submitting sends your question and matching course excerpts to OpenAI and uses
 your plan's limits. Check generated answers against the supplied sources.
 
-`npm start -- logout` removes the saved school session and inventory. Disconnect
+Stop the app, then run `dd2l logout` (or `npm start -- logout` from source) to
+remove the saved school session and inventory. Disconnect
 ChatGPT separately in Settings; clear the site's browser data to remove saved
 widget preferences and shortcut titles.
 
@@ -59,3 +77,7 @@ collection limits and cache behavior.
 
 Run `npm test` for tests and `npm run ui:check` for browser checks.
 Third-party attribution is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Original dd2l code is [MIT licensed](LICENSE); third-party assets retain their
+own licenses. Maintainers: see [PUBLISHING.md](https://github.com/ivanbard/dd2l/blob/main/PUBLISHING.md)
+for release setup.

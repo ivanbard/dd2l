@@ -1,16 +1,27 @@
 {
   "name": "dd2l",
   "version": "0.1.0",
-  "private": true,
+  "description": "A local, read-only student companion for Queen's onQ: sync coursework, search sources, and optionally connect ChatGPT.",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/ivanbard/dd2l.git" },
+  "homepage": "https://github.com/ivanbard/dd2l#readme",
+  "bugs": { "url": "https://github.com/ivanbard/dd2l/issues" },
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
   "type": "module",
+  "bin": { "dd2l": "bin/dd2l.mjs" },
+  "files": ["bin/", "src/", "ui/", "docs/README.md", "THIRD_PARTY_NOTICES.md"],
   "engines": {
     "node": ">=24"
   },
   "scripts": {
     "start": "node src/cli.mjs",
+    "setup": "node src/cli.mjs setup",
     "ui": "node src/ui-server.mjs",
     "ui:check": "node scripts/check-ui.mjs",
     "test": "node --test",
+    "package:check": "node scripts/check-package.mjs",
+    "release:check": "npm test && npm run ui:check && npm run package:check",
+    "prepublishOnly": "npm run release:check",
     "login": "node src/cli.mjs login",
     "audit": "node src/cli.mjs audit",
     "sync": "node src/cli.mjs sync",
