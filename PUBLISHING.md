@@ -1,18 +1,16 @@
 # Publishing dd2l
 
-Publish from the Windows checkout with Node.js 24+ and Google Chrome installed.
-No npm token belongs in this repository. Publication is manual; pushing a commit
-does not publish anything.
+Publish a stable GitHub Release to publish `@ivanbard/dd2l` to npm automatically.
+Pushing commits or tags alone does not publish anything. Drafts and prereleases
+are ignored. Major, minor and patch releases all use the same workflow.
 
 ## Continuous integration
 
 GitHub Actions runs `npm ci` and `npm run release:check` on pull requests and
 pushes to `main`, using Windows Server 2025, Node.js 24 and the runner's installed
 Google Chrome. The same checks can be started manually from the Actions tab.
-Windows is required to exercise the DPAPI and OCR tests; CI uses fictional data
-and test credentials, without a school or ChatGPT login. The first hosted run
-must confirm the runner supports Windows OCR; do not skip those tests to make
-CI pass.
+Windows exercises the DPAPI and OCR tests; CI uses fictional data and test
+credentials, without a school or ChatGPT login.
 
 The GitHub branch protection for `main` requires a pull request and the
 `Windows release checks` status check on an up-to-date branch before merging.
@@ -22,57 +20,72 @@ the check becomes selectable after the workflow has run.
 Weekly Dependabot pull requests update npm dependencies and GitHub Actions;
 they go through the same checks and require manual merging.
 
-Publishing remains manual under the release steps below. CI does not publish
-packages or replace the required security audit.
+## One-time npm setup
 
-## One-time account setup
+The package already exists as `@ivanbard/dd2l`; its installed binary is `dd2l`.
+Sign into the npm account that owns the `@ivanbard` scope, enable two-factor
+authentication, and keep recovery codes somewhere private.
 
-1. Create an account at https://www.npmjs.com/signup and verify its email address.
-2. Enable two-factor authentication in npm account settings. Keep recovery codes
-   somewhere private.
-3. Run `npm login --registry=https://registry.npmjs.org/` and complete the browser
-   flow. Confirm the account with `npm whoami --registry=https://registry.npmjs.org/`.
+In [the package settings](https://www.npmjs.com/package/@ivanbard/dd2l/access),
+add a **GitHub Actions trusted publisher** with these exact values:
 
-The package is named `@ivanbard/dd2l`. npm rejected the unscoped `dd2l` name
-because it resembles an existing package. Publish with the npm account that owns
-the `@ivanbard` scope. The installed binary is still named `dd2l`.
+| Field | Value |
+| --- | --- |
+| Organization or user | `ivanbard` |
+| Repository | `dd2l` |
+| Workflow filename | `publish.yml` |
+| Environment | Leave empty (the workflow does not use an environment) |
+| Allowed actions, if offered | Allow direct `npm publish` |
 
-## First release, after the security audit
+No npm token or `NPM_TOKEN` GitHub secret is needed. The workflow uses GitHub's
+short-lived OIDC identity and installs npm 11 for trusted publishing support
+(npm 11.5.1 or newer is required). npm automatically attaches provenance for
+trusted GitHub Actions publishes; the command also requests it explicitly.
+See [npm's trusted publishing documentation](https://docs.npmjs.com/trusted-publishers/).
 
-1. Finish the security audit and address its release-blocking findings. The
-   package checks do not establish that the audit passed.
-2. Make the GitHub repository public and confirm its code is the version you
-   intend to distribute. Review the README, MIT license, third-party notices,
-   and package metadata. The initial package version is `0.1.0`.
-3. Run `npm ci`, then `npm run release:check`. This runs tests, Chrome UI checks,
-   and validates the actual npm package file list without publishing.
-4. Review the payload with `npm pack --dry-run`. Test the packed package on a
-   fresh Windows account if possible. Commit and push all approved changes.
-5. Check `git status --short` is empty, then publish:
+Configure the trusted publisher when ready to release: npm currently requires
+its first successful publish within two days of configuration. If it expires,
+recreate the connection before publishing.
+
+## Release
+
+1. Complete the security audit and address release-blocking findings before
+   publishing. Passing CI does not establish that the audit passed. Review the
+   README, MIT license, third-party notices and package contents as appropriate.
+2. Update the version and lockfile together, for example:
 
    ```powershell
-   npm publish
+   npm version patch --no-git-tag-version
    ```
 
-`npm publish` reruns `release:check` automatically before uploading. It targets
-the public npm registry using `publishConfig`; complete npm's authentication or
-2FA prompt if requested. Do not use `--ignore-scripts`, which bypasses the checks.
-If a check fails, fix it and retry. Registry authorization or name-availability
-errors must be resolved through npm; local checks cannot prevent those.
+   Use `minor` or `major` instead for the intended version change. Commit the
+   changes, open a pull request, and merge after CI passes.
+3. On GitHub, draft a new release. Create a tag named exactly `vX.Y.Z` matching
+   the merged `package.json` version, targeting that commit on `main`. Review
+   the release notes and publish the release without marking it a prerelease.
+4. Watch **Publish to npm** in Actions. It checks out the tag, verifies the
+   version and that the commit belongs to `main`, then runs `npm ci` and
+   `npm publish --provenance`. The existing `prepublishOnly` hook runs all tests,
+   Chrome UI checks and npm package-content validation before uploading.
+5. After success, verify the released version (replace `X.Y.Z`):
 
-After success, verify:
+   ```powershell
+   npm view @ivanbard/dd2l@X.Y.Z version bin --json --registry=https://registry.npmjs.org/
+   npx --yes @ivanbard/dd2l@X.Y.Z --help
+   ```
 
-```powershell
-npm view @ivanbard/dd2l@0.1.0 version bin --json --registry=https://registry.npmjs.org/
-npx --yes @ivanbard/dd2l@0.1.0 --help
-```
+The package's `publishConfig` publishes publicly to the npm registry. Stable
+releases update npm's `latest` tag, so release versions in ascending order.
+The workflow serializes publishing and does not cancel an active publish.
+Make sure `publish.yml` is merged before creating the release tag.
 
-Users can then run `npx @ivanbard/dd2l setup`. The GitHub repository's visibility and an
-npm release are separate; making one public does not publish the other.
+## Failed releases
 
-## Later releases
+If validation, tests or npm authentication fail, nothing is published. Fix the
+cause before retrying. For trusted publishing errors, check the exact repository
+and workflow values in npm settings and whether the connection has expired.
 
-With a clean checkout after fixes and audit review, use `npm version patch`
-(or an intentional minor/major bump), `git push --follow-tags`, then `npm publish`.
-`npm version` creates a commit and tag; review changes before running it. npm
-versions cannot be overwritten, so use a new version for each release.
+If npm accepted a version but a later workflow step or network response failed,
+check the registry before retrying. Published npm versions cannot be overwritten;
+fix code in a new version instead of moving an already published release tag.
+Do not bypass release checks with `--ignore-scripts`.
