@@ -12,9 +12,16 @@ const sink = createServer((req, res) => { networkHits++; res.end('Should not be 
 await new Promise(resolve => sink.listen(0, '127.0.0.1', resolve));
 const sinkUrl = `http://127.0.0.1:${sink.address().port}/private`;
 let browser;
+let page;
 try {
   browser = await chromium.launch({ channel: 'chrome', headless: true });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+  page = await browser.newPage({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+  await page.addInitScript(() => {
+    globalThis.canvasClicks = [];
+    document.addEventListener('click', event => {
+      canvasClicks.push({ target: event.target.outerHTML?.slice(0, 200), x: event.clientX, y: event.clientY });
+    }, true);
+  });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/api/llm/status', route => route.fulfill({ json: { active: 'test', accounts: [] } }));
@@ -117,6 +124,15 @@ try {
   await page.locator('#new-chat').click();
   assert.deepEqual(errors, []);
   console.log('Canvas checks passed: assignment, practice, planner, state preservation, verified sources, mobile, markup/worker isolation and timeout recovery.');
+} catch (error) {
+  for (const frame of page?.frames() || []) {
+    console.error('Canvas failure diagnostics:', await frame.evaluate(() => ({
+      url: location.pathname, clicks: globalThis.canvasClicks,
+      html: document.getElementById('canvas')?.innerHTML,
+      notice: document.getElementById('notice')?.textContent,
+    })).catch(() => 'Frame unavailable'));
+  }
+  throw error;
 } finally {
   await browser?.close();
   await new Promise(resolve => server.close(resolve));
