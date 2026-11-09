@@ -1,6 +1,6 @@
 {
   "name": "@ivanbard/dd2l",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A local, read-only student companion for Queen's onQ: sync coursework, search sources, and optionally connect ChatGPT.",
   "license": "MIT",
   "repository": {
