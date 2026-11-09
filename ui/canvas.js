@@ -64,8 +64,12 @@ export function createCanvas(target, report) {
           }
         } else if (data.type === 'ready') {
           frame.inert = false;
-          frame.focus({ preventScroll: true });
-          frame.dataset.ready = 'true';
+          // Let Chrome update iframe input routing after removing inert.
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            if (generation !== current || frame.inert) return;
+            frame.focus({ preventScroll: true });
+            frame.dataset.ready = 'true';
+          }));
         }
         else if (data.type === 'height' && Number.isFinite(data.height)) frame.style.height = `${Math.min(1600, Math.max(360, data.height))}px`;
         else if (data.type === 'error' && typeof data.message === 'string') {

@@ -86,10 +86,14 @@ try {
   assert.equal(await page.locator('#canvas-workspace').isVisible(), false);
   program = { title: 'Memory practice', answer: 'Practice retrieval.', html: '<h1>Memory practice</h1><p>What distinguishes working memory?</p><button data-action="reveal">Reveal explanation</button><div id="explanation"></div>',
     css: 'button{padding:12px}', js: 'if(event.action === "reveal") state.revealed=true; return {state,html:`<h1>Memory practice</h1><p>What distinguishes working memory?</p><button data-action="reveal">Reveal explanation</button><div id="explanation">${state.revealed ? "Working memory holds and manipulates information." : ""}</div>`};' };
-  await send('Prepare me for the memory seminar with practice questions');
-  assert.equal(requests.at(-1).canvas, null);
-  await canvas().getByRole('button', { name: 'Reveal explanation' }).click();
-  await canvas().getByText('Working memory holds and manipulates information.', { exact: true }).waitFor();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await page.locator('#new-chat').click();
+    await send('Prepare me for the memory seminar with practice questions');
+    assert.equal(requests.at(-1).canvas, null);
+    assert.equal(await canvas().locator('#explanation').textContent(), '');
+    await canvas().getByRole('button', { name: 'Reveal explanation' }).click();
+    await canvas().getByText('Working memory holds and manipulates information.', { exact: true }).waitFor();
+  }
 
   program = { title: 'Afternoon planner', answer: 'Allocate your available study time.', html: '<h1>Plan your afternoon</h1><label>Minutes available<input name="minutes" type="range" min="30" max="240" value="180"></label><p>Adjust the slider to change your plan.</p>', css: 'label{display:block}input{width:100%}',
     js: 'const minutes=Number(state.inputs?.minutes?.value || 180); return {state,html:`<h1>Plan your afternoon</h1><label>Minutes available<input name="minutes" type="range" min="30" max="240" value="${minutes}"></label><p>${Math.round(minutes/2)} minutes for each priority</p>`};' };
