@@ -3,10 +3,10 @@ import { matches } from '../ui/answer-view.js';
 
 const text = maxLength => ({ type: 'string', maxLength });
 const object = properties => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
-const list = (items, maxItems) => ({ type: 'array', items, minItems: 0, maxItems });
+const list = (items, maxItems, minItems = 0) => ({ type: 'array', items, minItems, maxItems });
 export const workspacePlanSchema = object({
   title: text(160), goal: text(1000), question: text(500),
-  sections: list(object({ title: text(160), purpose: text(500), sourceIds: list(text(80), 24) }), 8),
+  sections: list(object({ title: text(160), purpose: text(500), sourceIds: list(text(80), 24, 1) }), 8),
 });
 
 const fail = message => Object.assign(new Error(message), { public: true });

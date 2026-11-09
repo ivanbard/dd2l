@@ -7,7 +7,9 @@ import { readInventory, searchInventory, homeInventory } from './ui-data.mjs';
 import { demoInventory } from './ui-demo.mjs';
 import { ChatGPT } from './llm.mjs';
 import { assignmentWorkspace } from './assignment-workspace.mjs';
-import { composeTaskWorkspace, validTaskContext } from './task-workspace.mjs';
+import { composeTaskWorkspace, validTaskContext, taskCatalogue } from './task-workspace.mjs';
+import { validCanvasContext, validCanvas } from '../ui/canvas-contract.js';
+import { canvasDocument } from './canvas.mjs';
 
 const root = fileURLToPath(new URL('../ui/', import.meta.url));
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png' };
@@ -34,10 +36,10 @@ export function createUiServer({ demo = false, inventoryPath = join(process.env.
   llm = demo ? null : new ChatGPT(join(process.env.LOCALAPPDATA || '', 'dd2l')) } = {}) {
   return createServer(async (req, res) => {
     const authority = `127.0.0.1:${res.socket.localPort}`;
-    const send = (status, body, type = 'application/json') => {
+    const send = (status, body, type = 'application/json', policy) => {
       res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
-        'Referrer-Policy': 'no-referrer', 'Cross-Origin-Resource-Policy': 'same-origin', 'X-Frame-Options': 'DENY',
-        'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" });
+        'Referrer-Policy': 'no-referrer', 'Cross-Origin-Resource-Policy': 'same-origin', 'X-Frame-Options': policy ? 'SAMEORIGIN' : 'DENY',
+        'Content-Security-Policy': policy || "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" });
       res.end(type === 'application/json' ? JSON.stringify(body) : body);
     };
     const callback = req.method === 'GET' && req.url.startsWith('/auth/callback?');
@@ -64,7 +66,7 @@ export function createUiServer({ demo = false, inventoryPath = join(process.env.
         let bytes = 0;
         for await (const chunk of req) {
           bytes += chunk.length;
-          if (bytes > (url.pathname === '/api/llm/answer' ? 65_536 : 8192)) { send(413, { error: 'Request too large.' }); return; }
+          if (bytes > (url.pathname === '/api/llm/answer' ? 1_000_000 : 8192)) { send(413, { error: 'Request too large.' }); return; }
           chunks.push(chunk);
         }
         let data;
@@ -75,12 +77,13 @@ export function createUiServer({ demo = false, inventoryPath = join(process.env.
         else if (url.pathname === '/api/llm/select') send(200, await llm.select(data.id));
         else if (url.pathname === '/api/llm/logout') send(200, await llm.logout());
         else if (url.pathname === '/api/llm/answer') {
-          const { q, course = '', assignment = '', context = null, model, consent } = data;
+          const { q, course = '', assignment = '', context = null, canvas = null, model, consent } = data;
           if (typeof q !== 'string' || !q.trim() || q.length > 500 || typeof course !== 'string' || (course && !/^\d+$/.test(course)) || typeof model !== 'string' || !model || model.length > 200 || consent !== true) {
-            send(400, { error: 'Provide a question, course, model and permission to send excerpts to OpenAI.' }); return;
+            send(400, { error: 'Provide a question, course, model and permission to share coursework and workspace progress with OpenAI.' }); return;
           }
           if (typeof assignment !== 'string' || (assignment && (!/^\d+$/.test(assignment) || !course))) { send(400, { error: 'Invalid assignment context.' }); return; }
           if (!validTaskContext(context)) { send(400, { error: 'Invalid workspace context.' }); return; }
+          if (!validCanvasContext(canvas)) { send(400, { error: 'Invalid canvas state.' }); return; }
           const inventory = readInventory(inventoryPath);
           if (course && !inventory.courses.some(c => c.id === course)) { send(404, { error: 'Course is not available in this inventory.' }); return; }
           const controller = new AbortController();
@@ -92,7 +95,9 @@ export function createUiServer({ demo = false, inventoryPath = join(process.env.
               () => readInventory(inventoryPath));
             if (task.workspace.question) { send(200, task); return; }
             try {
-              send(200, { ...await llm.answer(`Goal: ${task.workspace.goal}\nCurrent request: ${q}`, model, task.sources, signal), ...task });
+              const generated = await llm.generateCanvas(`Goal: ${task.workspace.goal}\nCurrent request: ${q}`, model, task.sources, canvas, signal);
+              if (!validCanvas(generated)) throw new Error('Invalid generated canvas');
+              send(200, { canvas: generated, answer: generated.answer, ...task });
             } catch (error) {
               if (controller.signal.aborted) throw error;
               send(200, { ...task, answerWarning: error.public ? error.message : 'AI explanation is unavailable. Your selected sources are available below.' });
@@ -104,7 +109,7 @@ export function createUiServer({ demo = false, inventoryPath = join(process.env.
       }
       if (req.method !== 'GET') { send(405, { error: 'This route is read-only.' }); return; }
       if (url.pathname.startsWith('/api/')) {
-        if (!['/api/status', '/api/courses', '/api/search', '/api/home'].includes(url.pathname)) { send(404, { error: 'Not found.' }); return; }
+        if (!['/api/status', '/api/courses', '/api/search', '/api/home', '/api/source'].includes(url.pathname)) { send(404, { error: 'Not found.' }); return; }
         const query = url.searchParams.get('q') || '';
         const course = url.searchParams.get('course') || '';
         const assignment = url.searchParams.get('assignment') || '';
@@ -112,7 +117,15 @@ export function createUiServer({ demo = false, inventoryPath = join(process.env.
         if (query.length > 500 || (course && !/^\d+$/.test(course))) { send(400, { error: 'Use a query of at most 500 characters and a valid course.' }); return; }
         const inventory = demo ? demoInventory() : readInventory(inventoryPath);
         if (course && !inventory.courses.some(item => item.id === course)) { send(404, { error: 'Course is not available in this inventory.' }); return; }
-        if (url.pathname === '/api/status') send(200, { demo, state: inventory.state,
+        if (url.pathname === '/api/source') {
+          const id = url.searchParams.get('id') || '';
+          if (!/^[\w-]{24}$/.test(id)) { send(400, { error: 'Invalid source reference.' }); return; }
+          const source = taskCatalogue(inventory, course).find(source => source.id === id);
+          if (!source) { send(404, { error: 'This source is no longer available. Refresh the workspace.' }); return; }
+          send(200, { id: source.id, title: source.title, courseName: source.courseName, text: source.text.slice(0, 100_000),
+            url: source.url, stale: !!source.stale, lastSuccess: source.lastSuccess || null });
+        }
+        else if (url.pathname === '/api/status') send(200, { demo, state: inventory.state,
           courseCount: inventory.courses.length, sourceCount: inventory.sources.length,
           lastSuccess: inventory.sources.map(source => source.lastSuccess).filter(Boolean).sort().at(-1) || null });
         else if (url.pathname === '/api/home') send(200, { ...homeInventory(inventory), demo });
@@ -120,8 +133,12 @@ export function createUiServer({ demo = false, inventoryPath = join(process.env.
         else send(200, { ...searchInventory(inventory, query, course), workspace: query ? assignmentWorkspace(inventory, query, course, assignment) : null, demo });
         return;
       }
+      if (url.pathname === '/canvas-frame') {
+        const frame = canvasDocument();
+        send(200, frame.html, 'text/html; charset=utf-8', frame.policy); return;
+      }
       const path = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-      if (!/^(?:index\.html|app\.js|widgets\.js|widget-layout\.js|assignment-workspace\.js|answer-view\.js|answer-renderer\.js|loading\.js|style\.css|assets\/[a-z-]+\.(?:svg|png))$/.test(path)) { send(404, { error: 'Not found.' }); return; }
+      if (!/^(?:index\.html|app\.js|canvas\.js|canvas-contract\.js|widgets\.js|widget-layout\.js|assignment-workspace\.js|answer-view\.js|answer-renderer\.js|loading\.js|style\.css|assets\/[a-z-]+\.(?:svg|png))$/.test(path)) { send(404, { error: 'Not found.' }); return; }
       send(200, await readFile(join(root, path)), mime[extname(path)]);
     } catch (error) {
       send(error.code === 'ENOENT' ? 404 : 503, { error: error.public ? error.message : error.code === 'ENOENT' ? 'Not found.' : 'Local data or AI service is unavailable. Retry after the current operation finishes.' });

@@ -146,6 +146,7 @@ test('adaptive planning uses the connected model and structured catalogue IDs be
       assert.equal(input.catalogue[0].id, 'source-a');
       assert.equal(input.previousWorkspace.goal, 'Prepare for seminars');
       assert.match(body.instructions, /arbitrary academic tasks/);
+      assert.deepEqual(body.text.format.schema.properties.sections.items.properties.sourceIds.items.enum, ['source-a']);
       return stream(event({ type: 'response.output_text.delta', delta: JSON.stringify({ title: 'Get back on track',
         goal: 'Prioritize the next steps', question: '', sections: [{ title: 'Start here', purpose: 'Review requirements', sourceIds: ['source-a'] }] }) }) + event({ type: 'response.completed' }));
     }
@@ -161,6 +162,27 @@ test('adaptive planning uses the connected model and structured catalogue IDs be
   const answer = await llm.answer(value.goal, 'chosen-model', [{ title: 'Memory seminar', excerpt: 'Read chapter 8 before the seminar.' }]);
   assert.equal(answer.view.sections[0].type, 'checklist');
   assert.equal(requests, 2);
+});
+
+test('canvas generation uses the existing model connection, bounded program schema and prior progress', async t => {
+  const program = { title: 'Seminar practice', answer: 'Practice from the course evidence.', html: '<h1>Practice</h1><textarea name="notes"></textarea>', css: 'h1{font-size:2rem}', js: 'return {state};' };
+  const { llm } = await fixture(t, async (url, options) => {
+    if (url.endsWith('/oauth/token')) return Response.json(tokens);
+    const body = JSON.parse(options.body);
+    const input = JSON.parse(body.input[0].content);
+    assert.equal(body.model, 'chosen-model');
+    assert.equal(body.store, false);
+    assert.equal(body.tools, undefined);
+    assert.ok(body.text.format.schema.properties.js);
+    assert.match(body.instructions, /isolated worker/);
+    assert.equal(input.sources[0].id, 'verified-source');
+    assert.equal(input.sources[0].url, undefined);
+    assert.equal(input.previousCanvas.state.inputs.notes.value, 'My progress');
+    return stream(event({ type: 'response.output_text.delta', delta: JSON.stringify(program) }) + event({ type: 'response.completed' }));
+  });
+  await connect(llm);
+  assert.deepEqual(await llm.generateCanvas('Add practice questions', 'chosen-model', [{ id: 'verified-source', title: 'Seminar reading', excerpt: 'Read chapter 8.', url: 'https://school.example' }],
+    { program, state: { inputs: { notes: { value: 'My progress', checked: false } } } }), program);
 });
 
 test('AI HTTP writes require local JSON origin, bounded input and explicit coursework consent', async t => {

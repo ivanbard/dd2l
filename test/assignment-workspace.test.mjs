@@ -115,13 +115,13 @@ test('HTTP workspace and AI share resolved evidence, validate context, and re-re
       question: q === 'assignment 3' ? 'Assignment 3 is not in the cache. Which activity did you mean?' : '',
       sections: q === 'assignment 3' ? [] : [{ title: 'Criteria', purpose: 'Review the grading criteria',
         sourceIds: catalogue.filter(source => source.category === 'rubric').map(source => source.id) }] }),
-    answer: async (q, model, sources) => {
+    generateCanvas: async (q, model, sources) => {
     calls++;
     if (failExplanation) throw Object.assign(new Error('Provider unavailable'), { public: true });
     assert.equal(model, 'model');
     assert.ok(sources.some(source => source.category === 'rubric'));
     assert.ok(sources.every(source => source.course === '1'));
-    return { answer: 'Grounded answer.' };
+    return { title: 'Your workspace', answer: 'Grounded answer.', html: '<h1>Work through the criteria</h1>', css: '', js: '' };
   } } });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => {
@@ -137,9 +137,13 @@ test('HTTP workspace and AI share resolved evidence, validate context, and re-re
   assert.equal((await search({ q: 'explain', course: '1', assignment: '../20' })).status, 400);
   assert.equal((await post({ q: 'explain', course: '1', assignment: {} })).status, 400);
   assert.equal((await post({ q: 'explain', context: { goal: 'study', sourceIds: [], admin: true } })).status, 400);
+  assert.equal((await post({ q: 'explain', canvas: { program: {}, state: {} } })).status, 400);
   const answer = await (await post({ q: 'Explain criterion one', course: '1', assignment: '20' })).json();
   assert.equal(answer.workspace.kind, 'task');
   assert.equal(answer.answer, 'Grounded answer.');
+  assert.equal(answer.canvas.title, 'Your workspace');
+  const sourceUrl = `${origin}/api/source?id=${answer.sources[0].id}`;
+  assert.equal((await fetch(sourceUrl)).status, 200);
   failExplanation = true;
   const partial = await (await post({ q: 'Explain criterion one', course: '1' })).json();
   assert.equal(partial.workspace.kind, 'task');
@@ -149,4 +153,5 @@ test('HTTP workspace and AI share resolved evidence, validate context, and re-re
   assert.equal(calls, 2);
   store.commit({ Identifier: 4 }, 'https://school.example', [{ ...enrollments, data: [] }], {}, { complete: true, data: [] });
   assert.equal((await search({ q: 'assignment 2', course: '1' })).status, 404);
+  assert.equal((await fetch(sourceUrl)).status, 404);
 });

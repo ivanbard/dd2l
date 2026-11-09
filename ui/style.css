@@ -228,6 +228,11 @@ code { background: #1a1a1a; border-radius: 4px; padding: 3px 6px; font-size: 12p
 .assignment-workspace .assignment-overview { background: #203238; border-color: #547982; }
 .assignment-workspace h3 { margin: 8px 0 16px; }
 .task-section { margin-top: 32px; }
+.canvas-workspace { max-width: 1120px; }
+.canvas-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+.generated-canvas { display:block; width:100%; height:600px; border:0; border-top:1px solid #ffffff18; margin-top:20px; background:#222; }
+.canvas-source { margin-top:24px; padding:24px 0; border-top:1px solid #ffffff25; }
+.canvas-source a { color:#a7d7e5; }
 .assignment-card h4 { font-size: 17px; margin: 8px 0 16px; }
 .assignment-workspace a { color: #a7d7e5; }
 .assignment-workspace summary { cursor: pointer; padding: 8px 0; }

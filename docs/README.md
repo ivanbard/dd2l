@@ -90,36 +90,57 @@ The model chooses source IDs and purpose-specific groups in relevance order,
 or asks for clarification. The server validates the plan, enforces the selected
 course scope, and rechecks current access before assembling sources.
 
-A second model call normally composes explanations, interactive checklists,
-comparisons or grouped cards from up to 24 selected excerpts (maximum 8,000
-characters each). Both calls use the selected model and its plan limits. A
-clarification needs only planning; if composition fails after a verified plan,
-the selected source workspace remains available. There are no automatic retries
-or fallback models. The UI discloses when only part of a large catalogue was
-considered. A workspace is not proof of exhaustive coverage.
+The second model call generates a workspace program: title, short answer, HTML
+fragment (up to 60,000 characters), CSS (20,000), and a JavaScript function body
+(60,000), grounded in up to 24 selected excerpts of 8,000 characters each. The
+interface can be a planner, practice session, rubric explorer, form, diagram or
+calculator. It is not limited to a catalogue of prebuilt task widgets. Both calls
+use the selected model and plan limits. Clarifications use only planning. Failed
+generation retains the verified source view; no retries or fallback models are
+billed automatically. Sources and cache coverage remain available from **Sources**.
 
-Follow-ups send the previous goal, selected source IDs, and a bounded summary of
-the displayed guidance and clarification (up to 12,000 characters), not a stored
-full chat transcript. Explicit new goals can change direction. Course changes and New search
-clear that context. Context stays in browser memory and clears on reload. Every
-request re-resolves source IDs against currently accessible cached records.
-Only projected coursework is shared: no school credentials or retained file bytes.
-Each explicit submission with a model selected authorizes this sharing; local
-mode never sends questions or coursework to a provider. Editing the prompt or
-changing models/courses cancels an in-flight request.
+The implementation uses browser primitives rather than introducing React and a
+second agent runtime. The dedicated frame has an opaque origin and restrictive
+CSP. Only the trusted frame runtime touches the DOM. Generated JavaScript runs
+in a Blob worker with network access blocked, no DOM or frame navigation, opaque-origin storage restrictions,
+and a two-second response watchdog. Generated HTML is sanitized to semantic HTML,
+form controls and SVG geometry; scripts, embedded frames, event handlers and
+navigation/resource URLs are removed. CSS remains confined to the frame. This
+follows the isolated generative canvas pattern while keeping the current server
+and ChatGPT authentication path.
 
-Plans and composed widgets use bounded Structured Outputs schemas. Source IDs,
-layout fields and citation numbers are validated before rendering trusted
-components. The model cannot supply executable HTML, scripts, styling or new
-navigation URLs. Invalid plans fail visibly; invalid answer layouts fall back
-to text and sources. Source panels show dates and cache status. Suggestions are
-labelled separately from instructor requirements. Valid structure and citations
-still require checking generated claims against the evidence.
+The generated function receives `state`, `event`, and selected `sources`, and
+returns `{html, state}`. Events include click actions (`data-action`), named input
+changes and submissions. Named controls are saved/restored automatically in
+`state.inputs`; text controls accept up to 4,000 characters each. State must be
+JSON data under 32,000 characters and twelve levels deep. The app waits for
+pending worker updates before collecting progress for a follow-up. Generated
+programs can also keep tabs, revealed explanations, scenario values and other
+local state. Rendering applies the newest queued input so older results do not
+overwrite typing.
 
-Checklist progress belongs to the current answer and does not update Brightspace.
-The adaptive workflow supports the records the connector has actually collected,
-including assignments, rubrics, content, quizzes, released grades, feedback,
-announcements and course policies. It cannot invent missing material or submit work.
+A `data-source` button requests inspection of a selected source. The host
+validates that source ID, re-reads current access, then displays a trusted source
+panel and a Brightspace link. The generated program receives no credential,
+arbitrary fetch, file, submission, or host navigation capability. Source URLs
+come from dd2l, not generated HTML. API source references stop resolving after
+access is revoked.
+
+Follow-ups send the previous goal, selected IDs, bounded guidance summary, prior
+program, current progress and any runtime error to the selected model. Prior
+context and coursework are untrusted data in model instructions. **New search**
+and course changes clear the canvas and context; **Restart progress** reruns the
+current program with empty state. Progress is held in browser memory and clears
+on reload. Editing a prompt cancels generation without discarding the current
+canvas. The app enforces bounded JSON input and output, but a valid program may
+still contain factual, calculation or usability errors. Check its linked
+coursework and identify what to fix in a follow-up.
+
+Each explicit submission with a model selected authorizes sharing those previews,
+excerpts, the previous program and local progress with OpenAI. Local mode sends
+none of them. Brightspace remains read-only. The model cannot invent missing
+course records or submit work. Catalogue coverage remains bounded and is shown
+in the source view when incomplete.
 
 This uses OpenAI's documented [local-app Sign in with ChatGPT flow](https://developers.openai.com/siwc/token-sharing-open-source), with PKCE, state/nonce and signed identity validation. A stable host ID and separate account registrations are saved under `%LOCALAPPDATA%\dd2l\llm\accounts.dpapi`, encrypted with Windows DPAPI. Refreshes are serialized across processes using a separate lock; the school sync can run alongside AI. Tokens stay on the server and never enter browser storage. `jose` handles JWT signature and claim verification. Remote Responses requests set `store: false` and `stream: true`; partial/failed streams do not become successful answers.
 

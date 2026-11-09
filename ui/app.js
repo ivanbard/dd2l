@@ -2,8 +2,11 @@ import { createWidgets } from './widgets.js';
 import { renderAnswerView } from './answer-renderer.js';
 import { startLoading } from './loading.js';
 import { renderAssignmentWorkspace } from './assignment-workspace.js';
+import { createCanvas } from './canvas.js';
 
 const $ = id => document.getElementById(id);
+const canvas = createCanvas($('canvas-host'), notice);
+let canvasSources = [];
 const refreshWidgets = createWidgets(async (course, title) => {
   try { await load(); } catch (error) { notice(error.message); return; }
   showAssignment(null);
@@ -102,8 +105,10 @@ async function askAI() {
   $('results').hidden = true;
   notice();
   try {
+    const previousCanvas = await canvas.snapshot();
+    if (aiRequest !== current) return;
     const data = await aiAction('answer', { q: $('prompt').value.trim(), course: $('course').value,
-      context: taskContext || null, model: $('model').value, consent: true }, current.signal);
+      context: taskContext || null, canvas: previousCanvas, model: $('model').value, consent: true }, current.signal);
     if (aiRequest !== current) return;
     $('workspace').classList.add('has-results');
     if (data.workspace) {
@@ -118,6 +123,18 @@ async function askAI() {
         $('assignment-heading').focus();
         return;
       }
+    }
+    if (data.canvas) {
+      const latestCanvas = await canvas.snapshot();
+      if (aiRequest !== current) return;
+      canvasSources = data.sources;
+      canvas.render(data.canvas, data.sources, latestCanvas?.state || previousCanvas?.state || {});
+      $('canvas-title').textContent = data.canvas.title;
+      $('canvas-workspace').hidden = false;
+      $('assignment-workspace').hidden = true;
+      $('canvas-sources').setAttribute('aria-expanded', 'false');
+      $('canvas-title').focus();
+      return;
     }
     $('answer-text').textContent = data.answer;
     const rendered = renderAnswerView($('answer-view'), data.view, data.sources);
@@ -189,6 +206,10 @@ function searchParams(query) {
 }
 
 function showAssignment(workspace, demo = false) {
+  if (!workspace || workspace.kind !== 'task') {
+    canvas.clear(); canvasSources = [];
+    $('canvas-workspace').hidden = true;
+  }
   taskContext = workspace?.kind === 'task' ? workspace.context : workspace?.status === 'resolved'
     ? { goal: `Work on ${workspace.title} in ${workspace.courseName}`, sourceIds: [] } : undefined;
   assignmentContext = workspace?.status === 'resolved' ? { id: workspace.id, course: workspace.course } : undefined;
@@ -288,7 +309,7 @@ async function showStatus() {
   try {
     await load();
     $('panel-body').replaceChildren(
-      element('p', status.demo ? 'Demo mode · fictional sample coursework. No school account is connected to this view.' : 'Local inventory · read-only. Local search stays on this device. Selecting a ChatGPT model and sending a question shares matching coursework with OpenAI.'),
+      element('p', status.demo ? 'Demo mode · fictional sample coursework. No school account is connected to this view.' : 'Local inventory · read-only. Local search stays on this device. Sending with a ChatGPT model shares your request, course previews, selected materials and workspace progress with OpenAI.'),
       element('p', `${status.courseCount} courses · ${status.sourceCount} searchable sources`),
       element('p', `Connector: ${status.state?.state || 'Not synced'} · Last successful source: ${date(status.lastSuccess)}`),
       element('p', 'Select a ChatGPT model to build adaptive workspaces around your goals. Local mode uses keyword matching and assignment records. Missing sources and access restrictions mean coverage may be incomplete.'),
@@ -298,7 +319,7 @@ async function showStatus() {
     const connection = await api('/api/llm/status');
     $('panel-body').append(element('h3', 'Use your ChatGPT plan'));
     if (connection.disabled) { $('panel-body').append(element('p', 'Provider sign-in is disabled in demo mode. Start the live UI to connect ChatGPT.')); return; }
-    $('panel-body').append(element('p', 'Eligible answers use your ChatGPT plan and its usage limits. dd2l does not automatically switch to an API key. Select a model and send a question to share matching coursework for that answer.'));
+    $('panel-body').append(element('p', 'Eligible workspace requests use your ChatGPT plan and its usage limits. Sending shares your request, course previews, selected materials and local workspace progress with OpenAI.'));
     const action = (label, handler) => {
       const button = element('button', label, 'account-action');
       button.type = 'button';
@@ -338,6 +359,16 @@ $('model').addEventListener('change', () => { clearAnswer(); notice(); });
 $('search-form').addEventListener('submit', event => { event.preventDefault(); if ($('model').value) askAI(); else search(); });
 $('course').addEventListener('change', () => { const browsing = !$('results').hidden || !$('assignment-workspace').hidden || !$('busy').hidden; clearAnswer(); showAssignment(null); if (browsing && !$('model').value) search(!$('prompt').value.trim()); });
 $('new-chat').addEventListener('click', reset);
+$('canvas-sources').addEventListener('click', () => {
+  const show = $('assignment-workspace').hidden;
+  $('assignment-workspace').hidden = !show;
+  $('canvas-sources').setAttribute('aria-expanded', String(show));
+  if (show) $('assignment-heading')?.focus();
+});
+$('canvas-restart').addEventListener('click', async () => {
+  try { const current = await canvas.snapshot(); if (current) canvas.render(current.program, canvasSources, {}); }
+  catch (error) { notice(error.message); }
+});
 $('search-nav').addEventListener('click', () => $('prompt').focus());
 $('courses-nav').addEventListener('click', showCourses);
 $('settings-nav').addEventListener('click', showStatus);

@@ -43,7 +43,7 @@
         </div>
         <span id="search-help" class="sr-only">Select a ChatGPT model for an adaptive workspace around any coursework goal. Local search uses keywords and assignment matching.</span>
       </form>
-      <p id="model-sharing" class="model-sharing" hidden>Adaptive workspace · Sending shares your goal, previous workspace context, and cached course previews and selected excerpts with OpenAI.</p>
+      <p id="model-sharing" class="model-sharing" hidden>Adaptive workspace · Sending shares your goal, workspace progress, course previews and selected excerpts with OpenAI.</p>
       <p id="adaptive-help" class="model-sharing">For adaptive workspaces, connect ChatGPT in Settings and select a model. Local search uses keyword matching.</p>
       <p id="notice" class="notice" role="status" hidden></p>
     </section>
@@ -54,6 +54,15 @@
       <p id="widget-help" class="widget-help">From your cached coursework.</p>
       <div id="widget-grid" class="widget-grid"></div>
       <p id="widget-status" class="widget-status" role="status"></p>
+    </section>
+    <section id="canvas-workspace" class="results canvas-workspace" aria-labelledby="canvas-title" hidden>
+      <header class="canvas-heading"><h2 id="canvas-title" tabindex="-1">Your workspace</h2><div class="widget-actions">
+        <button id="canvas-sources" type="button" aria-expanded="false" aria-controls="assignment-workspace">Sources</button>
+        <button id="canvas-restart" type="button">Restart progress</button>
+      </div></header>
+      <p class="retrieval-note">AI-generated workspace · Verify requirements against the linked coursework. Progress is kept for this visit.</p>
+      <div id="canvas-host" hidden></div>
+      <aside id="canvas-source" class="canvas-source" aria-label="Verified coursework source" hidden></aside>
     </section>
     <section id="ai-answer" class="results" aria-label="AI answer" hidden>
       <h2 id="ai-answer-title" tabindex="-1">Your answer</h2><p id="answer-text"></p>

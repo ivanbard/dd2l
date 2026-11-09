@@ -16,19 +16,23 @@ Connect ChatGPT in Settings to use your existing plan, then describe what you
 want to do: **“Help me get ready for tomorrow's seminar”**, **“What should I
 prioritize across my classes?”**, or **“I'm stuck on the filter design report.”**
 The connected model interprets the goal, selects relevant cached records across
-courses, and organizes them into a workspace with source panels, explanations,
-checklists or comparisons. There is no required prompt format or fixed set of
+courses, and generates an interactive workspace: a planner, practice session,
+rubric explorer, calculator, or another layout suited to the task. There is no required prompt format or fixed set of
 supported task names. If it needs clarification, answer in the same composer.
 
-Follow-ups carry the workspace's goal and selected source references; you can
-refine the task or change direction. A connected model is selected by default;
+Follow-ups carry the workspace's goal, generated interface and local progress, so
+you can change the layout while retaining notes and checked items. Use **Sources**
+to inspect verified coursework, or **Restart progress** to reset the current canvas. A connected model is selected by default;
 requests run only when you send a prompt, with the sharing notice visible.
 Choose **Local search** for keyword search and deterministic assignment views
 without sending data to AI. New search clears the goal; changing course clears
 context and sets a hard scope for the next request.
 
 Adaptive requests normally use two model calls: planning from course previews,
-then grounded composition from the selected fuller excerpts. Missing, inaccessible,
+then interface generation from the selected fuller excerpts. Generated HTML/CSS
+renders inside an isolated frame; JavaScript runs in a network-blocked worker
+through a small state/event interface. No frontend framework or external
+inference service is required. Local progress lasts for the current visit. Missing, inaccessible,
 and stale records remain explicit. Collection is incremental, so workspaces
 can only use material already synced. Cached submissions do not confirm current
 submission status, and generated guidance should be checked against its sources.
