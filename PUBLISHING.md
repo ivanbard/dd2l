@@ -4,6 +4,27 @@ Publish from the Windows checkout with Node.js 24+ and Google Chrome installed.
 No npm token belongs in this repository. Publication is manual; pushing a commit
 does not publish anything.
 
+## Continuous integration
+
+GitHub Actions runs `npm ci` and `npm run release:check` on pull requests and
+pushes to `main`, using Windows Server 2025, Node.js 24 and the runner's installed
+Google Chrome. The same checks can be started manually from the Actions tab.
+Windows is required to exercise the DPAPI and OCR tests; CI uses fictional data
+and test credentials, without a school or ChatGPT login. The first hosted run
+must confirm the runner supports Windows OCR; do not skip those tests to make
+CI pass.
+
+The GitHub branch protection for `main` requires a pull request and the
+`Windows release checks` status check on an up-to-date branch before merging.
+Force pushes and branch deletion are disabled. No approving review is required,
+and administrators retain GitHub's default bypass. If recreating these settings,
+the check becomes selectable after the workflow has run.
+Weekly Dependabot pull requests update npm dependencies and GitHub Actions;
+they go through the same checks and require manual merging.
+
+Publishing remains manual under the release steps below. CI does not publish
+packages or replace the required security audit.
+
 ## One-time account setup
 
 1. Create an account at https://www.npmjs.com/signup and verify its email address.
