@@ -53,6 +53,6 @@ export async function runApp(connector, { onUpdate, server,
     progress?.clear();
     signals.off('SIGINT', stop);
     signals.off('SIGTERM', stop);
-    await new Promise(resolve => server.close(resolve));
+    await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
   }
 }

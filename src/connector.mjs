@@ -332,8 +332,8 @@ export class Connector {
     }, signal);
   }
 
-  async auditAll(options) {
-    const { enrollments } = await this.courses();
+  async auditAll(options, client = this.client) {
+    const { enrollments } = await this.courses(client);
     if (!enrollments.complete) throw new AccessError('retry_wait', 'Complete enrollment coverage is required for an all-course pass.');
     const courses = enrollments.data.filter(item => item.Access?.CanAccess === true)
       .sort((a, b) => Number(a.OrgUnit.Id) - Number(b.OrgUnit.Id));
@@ -342,7 +342,8 @@ export class Connector {
     const results = [];
     try {
       for (const [index, course] of selected.items.entries()) {
-        results.push({ alias: `course-${selected.start + index + 1}`, ...await this.audit({ ...options, course: String(course.OrgUnit.Id) }) });
+        client.signal?.throwIfAborted();
+        results.push({ alias: `course-${selected.start + index + 1}`, ...await this.audit({ ...options, course: String(course.OrgUnit.Id) }, { signal: client.signal }) });
       }
       const summary = { finishedAt: new Date().toISOString(), scope: 'resumable all-accessible-course pass; up to five courses per run',
         accessibleCourseCount: courses.length, coursesProcessed: results.length, nextCourseOffset: selected.next,
@@ -354,18 +355,19 @@ export class Connector {
     } finally { this.store.meta('selected_course', previous); }
   }
 
-  audit(options = {}) {
+  audit(options = {}, { signal } = {}) {
     if (options.all && options.course) return Promise.reject(new Error('Choose either --all or --course.'));
-    return options.all ? this.auditAll({ from: options.from, to: options.to }) : this.exclusive(() => this.auditCourse(options));
+    const client = signal ? new BrightspaceClient(this.client.session, { origin: this.client.origin, fetchImpl: this.client.fetch, signal }) : this.client;
+    return options.all ? this.auditAll({ from: options.from, to: options.to }, client) : this.exclusive(() => this.auditCourse(options, client));
   }
 
-  async auditCourse({ course, from, to, all } = {}) {
+  async auditCourse({ course, from, to, all } = {}, client = this.client) {
     from ??= new Date(Date.now() - 30 * 86400_000).toISOString();
     to ??= new Date(Date.now() + 120 * 86400_000).toISOString();
     if (!Number.isFinite(Date.parse(from)) || !Number.isFinite(Date.parse(to)) || Date.parse(from) >= Date.parse(to)) {
       throw new Error('Calendar window must contain valid ISO dates with from earlier than to.');
     }
-    const { identity, versions, enrollments } = await this.courses();
+    const { identity, versions, enrollments } = await this.courses(client);
     const observations = [];
     const checkpoints = [];
     const traversal = {};
@@ -389,7 +391,8 @@ export class Connector {
           return observation;
         }
       }
-      const observation = await readResource(this.client, category, path, { list, courseId, file });
+      client.signal?.throwIfAborted();
+      const observation = await readResource(client, category, path, { list, courseId, file });
       if (observation.status === 429) throw new AccessError('retry_wait', 'Brightspace rate limit reached; the pass stopped before further reads.', { status: 429, retryAfter: observation.retryAfter });
       if (version) observation.version = version;
       observations.push(observation);
@@ -407,7 +410,7 @@ export class Connector {
       const read = (category, path, options) => capture(category, path, { courseId, ...options });
       const content = await read('content', `${le}/content/toc`);
       const overview = classifyOverview(await read('overview', `${le}/overview`));
-      const result = await collectSyllabus(this.client, { le, courseId, content, overview });
+      const result = await collectSyllabus(client, { le, courseId, content, overview });
       syllabus = result.summary;
       observations.push(...result.observations);
       const assignments = await read('assignments', `${le}/dropbox/folders/`, { list: true });
@@ -522,7 +525,8 @@ export class Connector {
         const record = { key: `linked:${courseId}:${url.href}`, category: youtubeId(url.href) ? 'video_transcript' : 'linked_content',
           course: courseId, source: url.href, retrievedAt: new Date().toISOString(), outcome: 'available', complete: true };
         try {
-          record.data = youtubeId(url.href) ? await youtubeTranscript(this.client, url.href) : await readLinkedDocument(this.client, url.href, { le, courseId, tree: content.data });
+          client.signal?.throwIfAborted();
+          record.data = youtubeId(url.href) ? await youtubeTranscript(client, url.href) : await readLinkedDocument(client, url.href, { le, courseId, tree: content.data });
           if (record.data.textStatus && record.data.textStatus !== 'available' && record.data.textStatus !== 'empty') { record.complete = false; record.outcome = 'partial'; }
         } catch (error) {
           if (!(error instanceof AccessError) || error.code === 'needs_login') throw error;
@@ -543,6 +547,7 @@ export class Connector {
         fieldNames: fields(item.data), error: item.error, message: item.message })),
       notChecked: ['private external-provider authorization', 'every object compared against the onQ browser', 'natural session-expiry soak test'],
     };
+    client.signal?.throwIfAborted();
     this.store.commit(identity, this.client.origin, observations, summary, enrollments);
     for (const [key, value] of checkpoints) this.store.meta(key, value);
     this.selectedCourse = courseId;
@@ -563,12 +568,14 @@ export async function sync(connector, options, { signal, onUpdate = console.log,
     let delay = 15 * 60_000;
     connector.store.meta('state', { state: 'syncing', updatedAt: new Date().toISOString() });
     try {
-      const summary = await connector.audit(options);
+      const summary = await connector.audit(options, { signal });
+      if (signal?.aborted) break;
       if (!options.all) options.course ??= connector.selectedCourse ?? undefined;
       failures = 0;
       delay = Math.max(delay, summary.retryAfter);
       await onUpdate({ state: summary.retryAfter ? 'retry_wait' : 'ready', ...summary });
     } catch (error) {
+      if (signal?.aborted) break;
       const state = error.code === 'needs_login' ? 'needs_login' : 'retry_wait';
       connector.store.meta('state', { state, updatedAt: new Date().toISOString() });
       if (state === 'needs_login' || !(error instanceof AccessError)) throw error;

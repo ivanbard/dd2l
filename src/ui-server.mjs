@@ -157,5 +157,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const server = createUiServer({ demo: values.demo, shutdownSignal: controller.signal });
   server.on('error', error => { console.error(`Could not start UI: ${error.code}`); process.exitCode = 1; });
   server.listen(port, '127.0.0.1', () => console.log(`dd2l ${values.demo ? 'DEMO (sample data)' : '(local cached coursework)'}: http://127.0.0.1:${port}`));
-  for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { controller.abort(); server.close(); });
+  for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { controller.abort(); server.close(); server.closeAllConnections(); });
 }

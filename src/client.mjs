@@ -21,12 +21,14 @@ export class AccessError extends Error {
 
 // Never attach response bodies, headers, or credential-bearing URLs to errors.
 export async function request(url, options = {}, fetchImpl = fetch) {
+  options.signal?.throwIfAborted();
   let response;
   try {
     response = await fetchImpl(url, {
       ...options, redirect: 'manual', signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
     });
   } catch {
+    options.signal?.throwIfAborted();
     throw new AccessError('retry_wait', 'Network request failed or timed out.');
   }
   return checkedResponse(response, url);
@@ -90,6 +92,7 @@ export class BrightspaceClient {
   }
 
   async response(path) {
+    this.signal?.throwIfAborted();
     const url = apiUrl(this.origin, path);
     let token = await this.session.token();
     for (let attempt = 0; attempt < 2; attempt++) {
