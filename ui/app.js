@@ -113,6 +113,8 @@ async function askAI() {
     $('workspace').classList.add('has-results');
     if (data.workspace) {
       showAssignment(data.workspace, status?.demo || false);
+      const stopped = data.workspace.research?.find(item => item.message);
+      if (stopped) notice(stopped.message);
       if (data.workspace.kind === 'task') taskContext.summary = JSON.stringify({
         question: data.workspace.question,
         sections: data.workspace.sections.map(({ title, purpose }) => ({ title, purpose })),

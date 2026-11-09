@@ -65,6 +65,12 @@ function renderTask(target, workspace, demo) {
   heading.id = 'assignment-heading';
   heading.tabIndex = -1;
   target.append(element('p', 'YOUR WORKSPACE', 'eyebrow'), heading, element('p', workspace.goal));
+  if (workspace.research?.length) {
+    const live = element('div', undefined, 'research-status');
+    live.append(element('p', `Checked Brightspace during this request · ${workspace.research.length} connector operations`, 'retrieval-note'));
+    for (const item of workspace.research) live.append(element('p', `${item.section}: ${item.outcome}${item.message ? ` · ${item.message}` : ''}`, 'source-meta'));
+    target.append(live);
+  }
   if (workspace.question) {
     const question = element('p', workspace.question, 'notice');
     question.setAttribute('role', 'status');

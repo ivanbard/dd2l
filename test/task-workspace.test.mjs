@@ -87,7 +87,7 @@ test('source identities survive unrelated inventory additions, and revoked recor
   changed.sources.unshift({ ...changed.sources[0], id: 'new-key#0', title: 'New unrelated source' });
   assert.deepEqual(taskCatalogue(changed).slice(1).map(source => source.id), original.map(source => source.id));
   await assert.rejects(composeTaskWorkspace({ planWorkspace: async (q, model, { catalogue }) => plan(catalogue.slice(0, 1)) },
-    inventory, 'Help me study', 'model', '', null, undefined, () => ({ courses: [], sources: [], assignments: [] })), /verified/);
+    inventory, 'Help me study', 'model', '', null, undefined, () => ({ courses: [], sources: [], assignments: [] })), /verified|account changed/);
 });
 
 test('quiz details, released grades and feedback are available without raw API fields or hidden data', () => {

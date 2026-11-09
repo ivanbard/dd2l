@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { matches } from '../ui/answer-view.js';
+import { researchActions } from './research.mjs';
 
 const text = maxLength => ({ type: 'string', maxLength });
 const object = properties => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
@@ -38,13 +39,16 @@ export function taskCatalogue(inventory, course = '') {
 
 // Bounded catalogue selection is distinct from evidence selection: the model sees varied records,
 // including records with no literal query overlap, and can follow assignment relationships.
-export function planningCatalogue(sources, query, context = null) {
+export function planningCatalogue(sources, query, context = null, preferred = []) {
   const terms = [...new Set(query.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) || [])];
   const previous = new Set(context?.sourceIds || []);
   const ranked = sources.map((source, index) => ({ source, index,
     score: (previous.has(source.id) ? 10 : 0) + terms.reduce((score, term) => score +
       (source.title.toLowerCase().includes(term) ? 3 : source.text.toLowerCase().includes(term) ? 1 : 0), 0),
-  })).sort((a, b) => b.score - a.score || a.index - b.index);
+  })).sort((a, b) => {
+    const left = preferred.indexOf(a.source.id), right = preferred.indexOf(b.source.id);
+    return (left < 0 ? Infinity : left) - (right < 0 ? Infinity : right) || b.score - a.score || a.index - b.index;
+  });
   const selected = new Map(ranked.slice(0, 200).map(({ source }) => [source.id, source]));
   // Reserve space for every course/category rather than letting a large course crowd out others.
   const buckets = new Map();
@@ -96,11 +100,39 @@ export function validTaskContext(context) {
     (summary === undefined || (typeof summary === 'string' && summary.length <= 12_000));
 }
 
-export async function composeTaskWorkspace(llm, inventory, query, model, course, context, signal, refresh = () => inventory) {
-  const all = taskCatalogue(inventory, course);
-  const catalogue = planningCatalogue(all, query, context);
-  const plan = await llm.planWorkspace(query, model, { catalogue, total: all.length,
-    courses: inventory.courses.filter(item => !course || item.id === course), now: new Date().toISOString() }, context, signal);
-  const visible = new Set(catalogue.map(source => source.id));
-  return buildTaskWorkspace(plan, taskCatalogue(refresh(), course).filter(source => visible.has(source.id)), catalogue.length, all.length);
+export async function composeTaskWorkspace(llm, inventory, query, model, course, context, signal, refresh = () => inventory, research = null) {
+  let accountScope = inventory.scope;
+  const checkedInventory = value => {
+    if (accountScope && value.scope !== accountScope) throw fail('School account changed or its cache was cleared. Start a new request.');
+    accountScope ||= value.scope;
+    return value;
+  };
+  for (let round = 0; round <= 4; round++) {
+    signal?.throwIfAborted();
+    const current = checkedInventory(round ? refresh() : inventory);
+    const all = taskCatalogue(current, course);
+    const preferred = research ? all.filter(source => research.keys.has(source.resourceKey))
+      .sort((a, b) => Number(!a.category.includes('file')) - Number(!b.category.includes('file')) || (Date.parse(b.lastSuccess) || 0) - (Date.parse(a.lastSuccess) || 0)).map(source => source.id) : [];
+    const catalogue = planningCatalogue(all, query, context, preferred);
+    const plan = await llm.planWorkspace(query, model, { catalogue, total: all.length,
+      courses: current.courses.filter(item => !course || item.id === course), now: new Date().toISOString(),
+      ...(research ? { browsing: { available: round < 4 && research.available, remaining: round < 4 ? research.remaining : 0, history: research.history } } : {}),
+    }, context, signal);
+    if (plan.requests?.length) {
+      if (!matches(plan.requests, researchActions)) throw fail('The model returned invalid Brightspace read requests.');
+      if (!research || round === 4 || !research.available) throw fail('The model exceeded the live reading budget. Please narrow your request.');
+      if (plan.sections?.length) throw fail('The model must finish reading before selecting workspace sources.');
+      for (const action of plan.requests) {
+        if (!research.available) break;
+        await research.execute(action);
+      }
+      continue;
+    }
+    const { requests, ...finalPlan } = plan;
+    const visible = new Set(catalogue.map(source => source.id));
+    const task = buildTaskWorkspace(finalPlan, taskCatalogue(checkedInventory(refresh()), course).filter(source => visible.has(source.id)), catalogue.length, all.length);
+    if (research?.history.length) task.workspace.research = research.history.map(({ action, result }) => ({ action: action.action,
+      section: action.section || 'resource', outcome: result.outcome, message: result.message || '', outcomes: result.outcomes || [] }));
+    return task;
+  }
 }

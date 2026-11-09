@@ -27,7 +27,8 @@ export function readInventory(path) {
     const rows = db.prepare(`SELECT key,course,category,data,last_success,checked_at,outcome
       FROM resources`).all()
       .map(row => ({ ...row, data: JSON.parse(row.data) }));
-    return { ...projectInventory(rows, state, meta('school_origin') ?? SCHOOL), scope: createHash('sha256').update(String(meta('account') || 'local')).digest('hex') };
+    const account = meta('account');
+    return { ...projectInventory(rows, state, meta('school_origin') ?? SCHOOL), scope: account ? createHash('sha256').update(account).digest('hex') : null };
   } catch (error) {
     if (error.code === 'ERR_SQLITE_ERROR' && /unable to open database/.test(error.message)) {
       return { courses: [], sources: [], state: null };
@@ -77,7 +78,7 @@ export function projectInventory(rows, state, origin = SCHOOL) {
       };
       for (const [key, child] of Object.entries(value)) if (textFields.has(key)) collect(child, key);
       const text = [...new Set(parts.filter(Boolean))].join('\n').slice(0, 1_000_000);
-      if (text) sources.push({ id: `${row.key}#${path}`, course: String(row.course),
+      if (text) sources.push({ id: `${row.key}#${path}`, resourceKey: row.key, course: String(row.course),
         courseName: allowed.get(String(row.course)).name, title, text, category: row.category,
         lastSuccess: row.last_success, checkedAt: row.checked_at, stale: row.outcome !== 'available',
         dueDate: ['assignments', 'quizzes', 'quiz_details', 'calendar', 'calendar_occurrences'].includes(row.category) && Number.isFinite(Date.parse(value.DueDate)) ? value.DueDate : null,

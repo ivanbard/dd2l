@@ -10,6 +10,7 @@ import { assignmentWorkspace } from './assignment-workspace.mjs';
 import { composeTaskWorkspace, validTaskContext, taskCatalogue } from './task-workspace.mjs';
 import { validCanvasContext, validCanvas } from '../ui/canvas-contract.js';
 import { canvasDocument } from './canvas.mjs';
+import { createResearch } from './research.mjs';
 
 const root = fileURLToPath(new URL('../ui/', import.meta.url));
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png' };
@@ -32,7 +33,7 @@ ${connected ? '<a class="auth-usage" href="https://chatgpt.com/settings/usage" t
 </main></body></html>`;
 }
 
-export function createUiServer({ demo = false, inventoryPath = join(process.env.LOCALAPPDATA || '', 'dd2l', 'inventory.sqlite'),
+export function createUiServer({ demo = false, connector, shutdownSignal, inventoryPath = connector?.store.path || join(process.env.LOCALAPPDATA || '', 'dd2l', 'inventory.sqlite'),
   llm = demo ? null : new ChatGPT(join(process.env.LOCALAPPDATA || '', 'dd2l')) } = {}) {
   return createServer(async (req, res) => {
     const authority = `127.0.0.1:${res.socket.localPort}`;
@@ -90,9 +91,10 @@ export function createUiServer({ demo = false, inventoryPath = join(process.env.
           const abort = () => controller.abort();
           res.on('close', abort);
           try {
-            const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]);
+            const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(300_000), ...(shutdownSignal ? [shutdownSignal] : [])]);
+            const research = createResearch({ connector, inventoryPath, scope: course, accountScope: inventory.scope || '', signal });
             const task = await composeTaskWorkspace(llm, inventory, q, model, course, context, signal,
-              () => readInventory(inventoryPath));
+              () => readInventory(inventoryPath), research);
             if (task.workspace.question) { send(200, task); return; }
             try {
               const generated = await llm.generateCanvas(`Goal: ${task.workspace.goal}\nCurrent request: ${q}`, model, task.sources, canvas, signal);
@@ -151,8 +153,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const port = Number(values.port);
   if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Port must be between 1024 and 65535.');
   if (!values.demo && !process.env.LOCALAPPDATA) throw new Error('Live inventory requires Windows LOCALAPPDATA. Use --demo for sample data.');
-  const server = createUiServer({ demo: values.demo });
+  const controller = new AbortController();
+  const server = createUiServer({ demo: values.demo, shutdownSignal: controller.signal });
   server.on('error', error => { console.error(`Could not start UI: ${error.code}`); process.exitCode = 1; });
   server.listen(port, '127.0.0.1', () => console.log(`dd2l ${values.demo ? 'DEMO (sample data)' : '(local cached coursework)'}: http://127.0.0.1:${port}`));
-  for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close());
+  for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { controller.abort(); server.close(); });
 }

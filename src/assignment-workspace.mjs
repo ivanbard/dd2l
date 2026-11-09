@@ -45,7 +45,7 @@ export function projectAssignments(rows, courses, origin) {
       const data = { ...folder, ...(readable(detail) ? detail.data : {}) };
       const url = `${origin}/d2l/lms/dropbox/user/folder_submit_files.d2l?db=${id}&ou=${course.id}`;
       const record = (kind, title, row, text = readable(row) ? courseworkText(row.data) : '') => ({
-        id: `${course.id}:${id}:${kind}:${row?.key || title}`, course: course.id, courseName: course.name,
+        id: `${course.id}:${id}:${kind}:${row?.key || title}`, resourceKey: row?.key || null, course: course.id, courseName: course.name,
         category: kind, title, text: text.length > 100_000 ? `${text.slice(0, 100_000)}\n[Excerpt truncated. Open Brightspace for the full source.]` : text, status: state(row),
         stale: state(row) === 'stale', lastSuccess: row?.last_success || null, checkedAt: row?.checked_at || null, url,
       });

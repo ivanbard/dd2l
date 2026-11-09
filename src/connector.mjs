@@ -1,8 +1,9 @@
-import { AccessError } from './client.mjs';
+import { AccessError, BrightspaceClient } from './client.mjs';
+import { createHash } from 'node:crypto';
 import { readDocument } from './documents.mjs';
 import { classifyOverview, collectSyllabus } from './syllabus.mjs';
 import { courseNodes, reconcileQuizzes, batch } from './discovery.mjs';
-import { readLinkedDocument, actionLink } from './links.mjs';
+import { readLinkedDocument, actionLink, linkUrl } from './links.mjs';
 import { descriptionContent } from './documents.mjs';
 import { youtubeId, youtubeTranscript } from './media.mjs';
 
@@ -69,22 +70,36 @@ function feedbackEntity(folder, identity, submissions, groups) {
 }
 
 export class Connector {
-  constructor(client, store) { this.client = client; this.store = store; }
+  constructor(client, store) { this.client = client; this.store = store; this.queue = Promise.resolve(); }
 
-  async courses() {
-    const versions = await this.client.versions();
-    const identity = await this.client.get(`/d2l/api/lp/${versions.lp}/users/whoami`);
-    const session = await this.client.session.load();
+  exclusive(operation, signal) {
+    const run = this.queue.then(() => { signal?.throwIfAborted(); return operation(); });
+    this.queue = run.catch(() => {});
+    if (!signal) return run;
+    return new Promise((resolve, reject) => {
+      const abort = () => reject(signal.reason);
+      signal.addEventListener('abort', abort, { once: true });
+      if (signal.aborted) abort();
+      run.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+    });
+  }
+
+  async courses(client = this.client) {
+    const versions = await client.versions();
+    const identity = await client.get(`/d2l/api/lp/${versions.lp}/users/whoami`);
+    const session = await client.session.load();
     if (!identity?.Identifier || String(identity.Identifier) !== String(session.identity.Identifier)) {
       throw new AccessError('needs_login', 'Account identity changed. Sign in again before reading course data.');
     }
     const account = this.store.getMeta('account');
     if (account && account !== `${this.client.origin}:${identity.Identifier}`) throw new AccessError('needs_login', 'Local inventory belongs to another account. Sign out before switching accounts.');
-    const enrollments = await this.client.collection(`/d2l/api/lp/${versions.lp}/enrollments/myenrollments/?orgUnitTypeId=3`);
+    const enrollments = await client.collection(`/d2l/api/lp/${versions.lp}/enrollments/myenrollments/?orgUnitTypeId=3`);
     return { identity, versions, enrollments };
   }
 
-  async syllabus({ course } = {}) {
+  syllabus(options) { return this.exclusive(() => this.readSyllabus(options)); }
+
+  async readSyllabus({ course } = {}) {
     const { identity, versions, enrollments } = await this.courses();
     const courseId = selectCourse(enrollments, course);
     if (!courseId) throw new Error('No accessible course was found.');
@@ -96,6 +111,225 @@ export class Connector {
       courseCount: enrollments.data.length, ...result.summary };
     this.store.commit(identity, this.client.origin, [content, overview, ...result.observations], summary, enrollments);
     return summary;
+  }
+
+  browse(action, { scope = '', accountScope = '', resources = new Map(), signal } = {}) {
+    return this.exclusive(async () => {
+      signal?.throwIfAborted();
+      const sections = ['courses', 'content', 'assignments', 'quizzes', 'announcements', 'grades', 'calendar', 'overview', 'discussions'];
+      const browsing = action?.action === 'browse';
+      const target = action?.action === 'read' && resources.get(action.resource);
+      if ((!browsing && !target) || (browsing && (!sections.includes(action.section) ||
+        typeof action.query !== 'string' || action.query.length > 200 ||
+        typeof action.course !== 'string' || action.course.length > 20 ||
+        (action.section !== 'courses' && !/^\d+$/.test(action.course))))) {
+        throw new AccessError('invalid_link', 'Choose a course area or a resource returned by discovery.');
+      }
+      const course = browsing ? action.course : target.course;
+      if (scope && course && course !== scope) throw new AccessError('denied', 'The selected course is the boundary for this request.');
+      const client = new BrightspaceClient(this.client.session, { origin: this.client.origin, fetchImpl: this.client.fetch, signal });
+      const { identity, versions, enrollments } = await this.courses(client);
+      const account = createHash('sha256').update(`${client.origin}:${identity.Identifier}`).digest('hex');
+      if (accountScope && account !== accountScope) throw new AccessError('needs_login', 'School account changed. Start a new workspace request.');
+      signal?.throwIfAborted();
+      const observations = [{ key: 'enrollments', category: 'enrollments', ...enrollments,
+        outcome: enrollments.complete ? 'available' : 'partial', retrievedAt: new Date().toISOString() }];
+      const candidates = [];
+      const le = `/d2l/api/le/${versions.le}/${course}`;
+      const read = async (category, path, options = {}) => {
+        signal?.throwIfAborted();
+        const observation = await readResource(client, category, path, { courseId: course, ...options });
+        signal?.throwIfAborted();
+        if (category === 'rubrics') observation.key = path;
+        observations.push(observation);
+        if (observation.status === 429) throw new AccessError('retry_wait', 'Brightspace rate limit reached. Live discovery stopped.', { status: 429, retryAfter: observation.retryAfter });
+        return observation;
+      };
+      const visible = value => value && !value.IsHidden && !value.IsLocked && !value.IsDeleted && value.IsPublished !== false &&
+        !(Date.parse(value.StartDateTime) > Date.now()) && !(Date.parse(value.EndDateTime) < Date.now());
+      const requireData = row => {
+        if (row.outcome !== 'available') throw new AccessError(row.outcome === 'denied' ? 'denied' : 'unavailable', 'This resource could not be read live; cached evidence may be incomplete.');
+        return row.data;
+      };
+      const deny = (category, key) => {
+        observations.push({ key, category, course, outcome: 'denied', complete: false, retrievedAt: new Date().toISOString() });
+        throw new AccessError('restricted', 'Resource or its parent is hidden, removed, or outside release conditions.');
+      };
+      const offer = (kind, value, title, description = '') => candidates.push({ kind, course, ...value,
+        title: String(title || kind).slice(0, 200), description: String(description).slice(0, 400) });
+      const links = (content, owner) => {
+        for (const link of content.links || []) {
+          if (actionLink(link.url, client.origin)) continue;
+          try {
+            const url = new URL(link.url, new URL(owner.base || '/', client.origin));
+            const linkedCourse = url.origin === client.origin && url.pathname.match(/^\/d2l\/(?:le\/content|api\/le\/\d+\.\d+)\/(\d+)\//)?.[1];
+            const enforced = url.origin === client.origin && url.pathname.match(/^\/content\/enforced\/(\d+)[-/]/)?.[1];
+            if ((linkedCourse && linkedCourse !== course) || (enforced && enforced !== course)) continue;
+            if (!linkedCourse) linkUrl(client, url.href);
+            offer('link', { url: url.href, owner }, link.label || url.pathname);
+          } catch { /* Unsupported providers and action links are not browsing capabilities. */ }
+        }
+      };
+      const tree = async () => {
+        const previous = courseNodes(this.store.resource?.(`${le}/content/toc`)?.data);
+        const toc = requireData(await read('content', `${le}/content/toc`));
+        const nodes = courseNodes(toc), current = new Map(nodes.filter(item => item.TopicId != null).map(item => [String(item.TopicId), item]));
+        for (const node of [...nodes, ...previous.filter(item => item.TopicId != null && !current.has(String(item.TopicId)))]) {
+          if (node.TopicId == null || (!node.restricted && current.has(String(node.TopicId)))) continue;
+          observations.push({ key: `${le}/content/topics/${node.TopicId}/file`, course, category: 'content_file',
+            outcome: 'denied', complete: false, retrievedAt: new Date().toISOString() });
+          for (const link of [{ url: node.Url }, ...descriptionContent(node.Description).links].filter(item => item.url)) {
+            try { observations.push({ key: `linked:${course}:${new URL(link.url, client.origin).href}`, course,
+              category: 'linked_content', outcome: 'denied', complete: false, retrievedAt: new Date().toISOString() }); } catch {}
+          }
+        }
+        return toc;
+      };
+      const assignment = async assignmentId => {
+        const folders = requireData(await read('assignments', `${le}/dropbox/folders/`, { list: true }));
+        const folder = folders.find(item => String(item.Id) === assignmentId && visible(item));
+        if (!folder) deny('assignment_detail', `${le}/dropbox/folders/${assignmentId}`);
+        return folder;
+      };
+      const topic = async topicId => {
+        const toc = await tree();
+        const node = courseNodes(toc).find(item => String(item.TopicId) === topicId);
+        if (!node || node.restricted) deny('content_file', `${le}/content/topics/${topicId}/file`);
+        return { toc, node };
+      };
+      const forum = async forumId => {
+        const forums = requireData(await read('discussion_forums', `${le}/discussions/forums/`, { list: true }));
+        if (!forums.some(item => String(item.ForumId) === forumId && visible(item))) deny('discussion_topics', `${le}/discussions/forums/${forumId}/topics/`);
+        return requireData(await read('discussion_topics', `${le}/discussions/forums/${forumId}/topics/`, { list: true }));
+      };
+      try {
+        if (course && !enrollments.data.some(item => String(item.OrgUnit?.Id) === course && item.Access?.CanAccess === true)) {
+          throw new AccessError('denied', 'Course access is not confirmed by current enrollments.');
+        }
+        if (browsing) {
+          if (action.section === 'courses') return { outcome: 'available', accountScope: account, courses: enrollments.data.filter(item => item.Access?.CanAccess === true && (!scope || String(item.OrgUnit.Id) === scope))
+            .slice(0, 100).map(item => ({ id: String(item.OrgUnit.Id), name: item.OrgUnit.Name })), resources: [] };
+          if (action.section === 'content') {
+            for (const node of courseNodes(await tree()).filter(item => !item.restricted && item.TopicId != null)) {
+              if (node.ActivityType === 1) offer('topic', { topicId: id(node.TopicId) }, node.Title, descriptionContent(node.Description).text);
+              else links({ links: [{ url: node.Url, label: node.Title }, ...descriptionContent(node.Description).links].filter(link => link.url) }, { topicId: id(node.TopicId) });
+            }
+          } else if (action.section === 'assignments') {
+            for (const folder of requireData(await read('assignments', `${le}/dropbox/folders/`, { list: true })).filter(visible)) {
+              offer('assignment', { assignmentId: id(folder.Id) }, folder.Name, descriptionContent(folder.Instructions).text);
+            }
+          } else if (action.section === 'quizzes') {
+            const list = await read('quizzes', `${le}/quizzes/`, { list: true });
+            for (const quiz of reconcileQuizzes((list.data || []).filter(visible), await tree(), [], client.origin).quizzes.filter(item => !item.restricted)) {
+              offer('quiz', { quizId: id(quiz.quizId) }, quiz.name);
+            }
+          } else if (action.section === 'discussions') {
+            for (const item of requireData(await read('discussion_forums', `${le}/discussions/forums/`, { list: true })).filter(visible)) offer('forum', { forumId: id(item.ForumId) }, item.Name);
+          } else {
+            const routes = { announcements: ['announcements', 'news/', true], grades: ['grades', 'grades/values/myGradeValues/', true],
+              calendar: ['calendar', `calendar/events/myEvents/?startDateTime=${new Date(Date.now() - 30 * 86400_000).toISOString()}&endDateTime=${new Date(Date.now() + 120 * 86400_000).toISOString()}`, true], overview: ['overview', 'overview', false] };
+            const [category, path, list] = routes[action.section];
+            const row = await read(category, `${le}/${path}`, { list });
+            if (action.section === 'overview') Object.assign(row, classifyOverview(row));
+            if (action.section === 'calendar') for (const event of row.data || []) {
+              if (event.IsRecurring && event.CalendarEventId != null && visible(event)) offer('calendar', { eventId: id(event.CalendarEventId) }, event.Title);
+            }
+            if (action.section === 'overview' && row.data) {
+              links(descriptionContent(row.data.Description), { overview: true });
+              if (row.data.Attachment) offer('overview_file', {}, row.data.Attachment.FileName || 'Overview attachment');
+            }
+          }
+        } else if (target.kind === 'assignment' || target.kind === 'assignment_file') {
+          const folder = await assignment(target.assignmentId);
+          const path = `${le}/dropbox/folders/${target.assignmentId}`;
+          const detail = requireData(await read('assignment_detail', path));
+          if (!visible(detail)) deny('assignment_detail', path);
+          if (target.kind === 'assignment_file') {
+            const attachment = (detail.Attachments || folder.Attachments || []).find(item => String(item.FileId) === target.fileId && visible(item));
+            if (!attachment) deny('assignment_file', `${path}/attachments/${target.fileId}`);
+            const file = await read('assignment_file', `${path}/attachments/${target.fileId}`, { file: true });
+            if (file.data) { file.data.Title = target.title; links(file.data, { assignmentId: target.assignmentId, base: client.origin }); }
+          } else {
+            const submissions = await read('own_submissions', `${path}/submissions/mysubmissions/`, { list: true });
+            const rubrics = detail.Assessment?.Rubrics || folder.Assessment?.Rubrics;
+            if (rubrics?.length) observations.push({ key: `${path}/assessment/rubrics`, category: 'rubrics', course, data: rubrics,
+              outcome: 'available', complete: true, source: path, retrievedAt: new Date().toISOString() });
+            else {
+              const [major, minor] = versions.le.split('.').map(Number);
+              if (major > 1 || minor >= 93) await read('rubrics', `${le}/rubrics/?objectType=Dropbox&objectId=${target.assignmentId}`, { list: true });
+            }
+            const groups = folder.DropboxType === 1 || folder.GroupTypeId != null ? (await read('groups', `/d2l/api/lp/${versions.lp}/${course}/groups/`, { list: true })).data : [];
+            const entity = feedbackEntity(folder, identity, submissions.data, groups);
+            if (entity) await read('own_feedback', `${path}/feedback/${entity.type}/${entity.entityId}`);
+            for (const file of detail.Attachments || folder.Attachments || []) if (file.FileId != null && visible(file)) offer('assignment_file', { assignmentId: target.assignmentId, fileId: id(file.FileId) }, file.FileName || file.Name);
+            links(descriptionContent(detail.Instructions || folder.Instructions), { assignmentId: target.assignmentId });
+          }
+        } else if (target.kind === 'topic') {
+          const { node } = await topic(target.topicId);
+          const file = await read('content_file', `${le}/content/topics/${target.topicId}/file`, { file: true });
+          if (file.data) { file.data.Title = node.Title; links(file.data, { topicId: target.topicId, base: node.Url || file.data.resolvedUrl || client.origin }); }
+        } else if (target.kind === 'quiz') {
+          const list = await read('quizzes', `${le}/quizzes/`, { list: true });
+          const known = reconcileQuizzes((list.data || []).filter(visible), await tree(), [], client.origin).quizzes.find(item => item.quizId === target.quizId && !item.restricted);
+          if (!known || (list.data || []).some(item => String(item.QuizId) === target.quizId && !visible(item))) deny('quiz_details', `${le}/quizzes/${target.quizId}`);
+          const detail = await read('quiz_details', `${le}/quizzes/${target.quizId}`);
+          if (detail.data && !visible(detail.data)) deny('quiz_details', detail.key);
+          else await read('own_quiz_attempts', `${le}/quizzes/${target.quizId}/attempts/?userId=${id(identity.Identifier)}`, { list: true });
+        } else if (target.kind === 'forum') {
+          for (const item of (await forum(target.forumId)).filter(visible)) offer('discussion', { forumId: target.forumId, topicId: id(item.TopicId) }, item.Name);
+        } else if (target.kind === 'discussion') {
+          if (!(await forum(target.forumId)).some(item => String(item.TopicId) === target.topicId && visible(item))) deny('discussion_posts', `${le}/discussions/topics/${target.topicId}/posts/`);
+          await read('discussion_posts', `${le}/discussions/topics/${target.topicId}/posts/`, { list: true });
+        } else if (target.kind === 'overview_file') {
+          if (!requireData(await read('overview', `${le}/overview`)).Attachment) deny('content_file', `${le}/overview/attachment`);
+          const file = await read('content_file', `${le}/overview/attachment`, { file: true });
+          if (file.data) { file.data.Title = target.title; links(file.data, { overview: true, base: client.origin }); }
+        } else if (target.kind === 'calendar') {
+          const events = requireData(await read('calendar', `${le}/calendar/events/myEvents/?startDateTime=${new Date(Date.now() - 30 * 86400_000).toISOString()}&endDateTime=${new Date(Date.now() + 120 * 86400_000).toISOString()}`, { list: true }));
+          if (!events.some(event => String(event.CalendarEventId) === target.eventId && visible(event))) deny('calendar_occurrences', `${le}/calendar/event/${target.eventId}/occurrences`);
+          await read('calendar_occurrences', `${le}/calendar/event/${target.eventId}/occurrences`);
+        } else if (target.kind === 'link') {
+          let toc;
+          if (target.owner.topicId) ({ toc } = await topic(target.owner.topicId));
+          else if (target.owner.assignmentId) await assignment(target.owner.assignmentId);
+          else requireData(await read('overview', `${le}/overview`));
+          const linkedTopic = new URL(target.url).pathname.match(/\/viewContent\/(\d+)\//)?.[1] ||
+            new URL(target.url).pathname.match(/\/content\/topics\/(\d+)\/file$/)?.[1];
+          if (linkedTopic && new URL(target.url).origin === client.origin) ({ toc } = await topic(linkedTopic));
+          signal?.throwIfAborted();
+          const row = { key: `linked:${course}:${target.url}`, source: target.url, course, category: 'linked_content',
+            retrievedAt: new Date().toISOString(), outcome: 'available', complete: true };
+          try {
+            row.data = await readLinkedDocument(client, target.url, { le, courseId: course, tree: toc });
+            if (row.data.textStatus && !['available', 'empty'].includes(row.data.textStatus)) { row.outcome = 'partial'; row.complete = false; }
+            row.data.Title = target.title;
+            links(row.data, { ...target.owner, base: target.url });
+          } catch (error) {
+            if (error.code === 'needs_login' || error.status === 429 || signal?.aborted) throw error;
+            Object.assign(row, { outcome: ['denied', 'restricted'].includes(error.code) ? 'denied' : 'failed', complete: false, error: error.code });
+          }
+          observations.push(row);
+        }
+        const terms = (browsing ? action.query : '').toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
+        const ranked = candidates.map(item => ({ item, score: terms.reduce((score, term) => score + (`${item.title} ${item.description}`.toLowerCase().includes(term) ? 1 : 0), 0) }))
+          .filter(item => !terms.length || item.score).sort((a, b) => b.score - a.score);
+        const result = ranked.slice(0, 30).map(({ item }) => {
+          const reference = createHash('sha256').update(JSON.stringify(item)).digest('base64url').slice(0, 24);
+          resources.set(reference, item);
+          return { resource: reference, course: item.course, kind: item.kind, title: item.title, description: item.description };
+        });
+        return { outcome: observations.some(row => !['available'].includes(row.outcome)) ? 'partial' : 'available', accountScope: account, resources: result,
+          total: ranked.length, resourceKeys: observations.map(row => row.key), outcomes: observations.slice(1).map(({ category, outcome }) => ({ category, outcome })) };
+      } catch (error) {
+        if (target?.kind === 'link' && ['restricted', 'denied'].includes(error.code)) observations.push({
+          key: `linked:${course}:${target.url}`, course, category: 'linked_content', outcome: 'denied', complete: false, retrievedAt: new Date().toISOString() });
+        throw error;
+      } finally {
+        signal?.throwIfAborted();
+        this.store.commit(identity, client.origin, observations, { ...this.store.getMeta('last_run'),
+          onDemand: { checkedAt: new Date().toISOString(), resources: observations.length - 1 } }, enrollments);
+      }
+    }, signal);
   }
 
   async auditAll(options) {
@@ -120,11 +354,12 @@ export class Connector {
     } finally { this.store.meta('selected_course', previous); }
   }
 
-  async audit({ course, from, to, all } = {}) {
-    if (all) {
-      if (course) throw new Error('Choose either --all or --course.');
-      return this.auditAll({ from, to });
-    }
+  audit(options = {}) {
+    if (options.all && options.course) return Promise.reject(new Error('Choose either --all or --course.'));
+    return options.all ? this.auditAll({ from: options.from, to: options.to }) : this.exclusive(() => this.auditCourse(options));
+  }
+
+  async auditCourse({ course, from, to, all } = {}) {
     from ??= new Date(Date.now() - 30 * 86400_000).toISOString();
     to ??= new Date(Date.now() + 120 * 86400_000).toISOString();
     if (!Number.isFinite(Date.parse(from)) || !Number.isFinite(Date.parse(to)) || Date.parse(from) >= Date.parse(to)) {

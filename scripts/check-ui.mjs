@@ -345,6 +345,8 @@ try {
   const goal = 'Prepare for the memory seminar';
   const adaptiveWorkspace = { kind: 'task', title: 'Your seminar workspace', goal, question: '',
     context: { goal, sourceIds: ['memory-source'] }, catalogueCount: 20, total: 20,
+    research: [{ action: 'browse', section: 'content', outcome: 'available' },
+      { action: 'read', section: 'resource', outcome: 'needs_login', message: 'School sign-in is required; using cached sources.' }],
     sections: [{ title: 'Understand the ideas', purpose: 'Build confidence before the seminar.', sources: [taskSource] }] };
   await page.route('**/api/llm/answer', async route => {
     workspaceCalls++;
@@ -378,6 +380,9 @@ try {
   assert.equal(workspaceCalls, 2);
   assert.match(await page.locator('#assignment-workspace').textContent(), /Understand the ideas/);
   assert.match(await page.locator('#assignment-workspace').textContent(), /Stale cache/);
+  assert.match(await page.locator('.research-status').textContent(), /2 connector operations/);
+  assert.match(await page.locator('.research-status').textContent(), /resource: needs_login/);
+  assert.match(await page.locator('#notice').textContent(), /School sign-in is required/);
   assert.equal(await page.locator('#assignment-workspace').isVisible(), true);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.screenshot({ path: '.dd2l/ui-adaptive-mobile.png', fullPage: true });

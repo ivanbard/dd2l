@@ -15,7 +15,7 @@ your materials, and ask questions with sources.
 Connect ChatGPT in Settings to use your existing plan, then describe what you
 want to do: **“Help me get ready for tomorrow's seminar”**, **“What should I
 prioritize across my classes?”**, or **“I'm stuck on the filter design report.”**
-The connected model interprets the goal, selects relevant cached records across
+The connected model interprets the goal, selects relevant records across
 courses, and generates an interactive workspace: a planner, practice session,
 rubric explorer, calculator, or another layout suited to the task. There is no required prompt format or fixed set of
 supported task names. If it needs clarification, answer in the same composer.
@@ -28,17 +28,25 @@ Choose **Local search** for keyword search and deterministic assignment views
 without sending data to AI. New search clears the goal; changing course clears
 context and sets a hard scope for the next request.
 
-Adaptive requests normally use two model calls: planning from course previews,
-then interface generation from the selected fuller excerpts. Generated HTML/CSS
+The model can discover course areas, read uncached documents, and follow supported
+document links through the connector before composing the workspace. Retrieved
+materials enter the same cache used by search and sync. This covers accessible
+course content, assignment instructions/rubrics/attachments, your submission or
+quiz history, discussions, grades, announcements and calendar information.
+
+Adaptive requests use planning followed by interface generation from selected
+excerpts. Live research adds planning turns, bounded to four read rounds and eight
+connector operations per request. Generated HTML/CSS
 renders inside an isolated frame; JavaScript runs in a network-blocked worker
 through a small state/event interface. No frontend framework or external
 inference service is required. Local progress lasts for the current visit. Missing, inaccessible,
-and stale records remain explicit. Collection is incremental, so workspaces
-can only use material already synced. Cached submissions do not confirm current
+and stale records remain explicit. Cached submissions do not confirm current
 submission status, and generated guidance should be checked against its sources.
 
 The connector is read-only. It does not submit work or change grades, posts,
 quiz attempts or completion states. Coverage depends on what onQ makes accessible.
+Live research uses approved API and document readers; it cannot click through
+arbitrary pages or sign into private external course tools.
 
 ## School not listed?
 Choose **My school isn't listed** during setup and paste your school's

@@ -24,7 +24,7 @@ export async function request(url, options = {}, fetchImpl = fetch) {
   let response;
   try {
     response = await fetchImpl(url, {
-      ...options, redirect: 'manual', signal: AbortSignal.timeout(30_000),
+      ...options, redirect: 'manual', signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
     });
   } catch {
     throw new AccessError('retry_wait', 'Network request failed or timed out.');
@@ -71,14 +71,15 @@ export function apiUrl(origin, path) {
 }
 
 export class BrightspaceClient {
-  constructor(session, { origin = SCHOOL, fetchImpl = fetch } = {}) {
+  constructor(session, { origin = SCHOOL, fetchImpl = fetch, signal } = {}) {
     this.session = session;
     this.origin = schoolOrigin(origin);
     this.fetch = fetchImpl;
+    this.signal = signal;
   }
 
   async versions() {
-    const data = await readJson(await request(`${this.origin}/d2l/api/versions/`, {}, this.fetch));
+    const data = await readJson(await request(`${this.origin}/d2l/api/versions/`, { signal: this.signal }, this.fetch));
     const versions = {};
     for (const product of ['lp', 'le']) {
       const value = data?.find?.(item => item.ProductCode === product)?.LatestVersion;
@@ -93,7 +94,7 @@ export class BrightspaceClient {
     let token = await this.session.token();
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        return await request(url, { headers: { authorization: `Bearer ${token}`, accept: 'application/json' } }, this.fetch);
+        return await request(url, { headers: { authorization: `Bearer ${token}`, accept: 'application/json' }, signal: this.signal }, this.fetch);
       } catch (error) {
         if (error.code !== 'needs_login' || attempt) throw error;
         token = await this.session.token(token);

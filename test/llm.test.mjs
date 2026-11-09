@@ -164,6 +164,28 @@ test('adaptive planning uses the connected model and structured catalogue IDs be
   assert.equal(requests, 2);
 });
 
+test('planning exposes bounded connector requests only while live research is available', async t => {
+  let available = true;
+  const request = { action: 'browse', course: '42', section: 'content', query: 'recursion' };
+  const { llm } = await fixture(t, async (url, options) => {
+    if (url.endsWith('/oauth/token')) return Response.json(tokens);
+    const body = JSON.parse(options.body), schema = body.text.format.schema;
+    assert.ok(schema.required.includes('requests'));
+    assert.equal(schema.properties.requests.maxItems, available ? 2 : 0);
+    assert.equal(schema.properties.requests.items.anyOf[0].additionalProperties, false);
+    assert.equal(schema.properties.sections.maxItems, 0);
+    assert.equal(JSON.parse(body.input[0].content).browsing.remaining, available ? 8 : 0);
+    assert.match(body.instructions, /Resource handles are not final source IDs/);
+    const result = { title: 'Recursion', goal: 'Find instructions', question: available ? '' : 'Which topic?', sections: [], requests: available ? [request] : [] };
+    return stream(event({ type: 'response.output_text.delta', delta: JSON.stringify(result) }) + event({ type: 'response.completed' }));
+  });
+  await connect(llm);
+  const plan = () => llm.planWorkspace('Find recursion notes', 'chosen-model', { catalogue: [], browsing: { available, remaining: available ? 8 : 0, history: [] } }, null);
+  assert.deepEqual((await plan()).requests, [request]);
+  available = false;
+  assert.deepEqual((await plan()).requests, []);
+});
+
 test('canvas generation uses the existing model connection, bounded program schema and prior progress', async t => {
   const program = { title: 'Seminar practice', answer: 'Practice from the course evidence.', html: '<h1>Practice</h1><textarea name="notes"></textarea>', css: 'h1{font-size:2rem}', js: 'return {state};' };
   const { llm } = await fixture(t, async (url, options) => {

@@ -86,16 +86,36 @@ The first model call receives the request, prior workspace goal and selected
 source references, accessible course names, and up to 400 catalogue previews
 (maximum 400 characters of source text each). Catalogue selection includes
 keyword matches, previous references, and diverse course/category records.
+When evidence is missing, stale, or needs a current check, the model can request
+read-only connector operations and plan again. It can discover courses and course
+areas, read discovered content files, assignment details/rubrics/own status and
+attachments, quiz metadata/own attempts, discussion forums/topics/posts, overview
+attachments, grades, announcements and calendar events. Supported document links
+can be followed from those resources. Discovery returns request-local handles;
+the model cannot supply arbitrary network URLs. New observations update the same
+inventory, without changing the sync course or traversal cursors. Freshly retrieved
+records receive priority in the next catalogue.
+
+Research allows at most two operations per planning turn, four read rounds and
+eight connector operations. A final planning turn must finish with available
+evidence or explain what is missing. Requests have a five-minute overall deadline;
+each operation may involve several bounded API/document reads. Calendar discovery
+covers the previous 30 and next 120 days. Live reads share the connector queue with
+sync, so an in-progress course pass can delay them. Use the UI opened by `dd2l start`
+to share its connector; standalone `npm run ui` acquires the inventory lock for each
+operation and reports if another command owns it.
+
 The model chooses source IDs and purpose-specific groups in relevance order,
 or asks for clarification. The server validates the plan, enforces the selected
 course scope, and rechecks current access before assembling sources.
 
-The second model call generates a workspace program: title, short answer, HTML
+After planning, another model call generates a workspace program: title, short answer, HTML
 fragment (up to 60,000 characters), CSS (20,000), and a JavaScript function body
 (60,000), grounded in up to 24 selected excerpts of 8,000 characters each. The
 interface can be a planner, practice session, rubric explorer, form, diagram or
-calculator. It is not limited to a catalogue of prebuilt task widgets. Both calls
-use the selected model and plan limits. Clarifications use only planning. Failed
+calculator. It is not limited to a catalogue of prebuilt task widgets. All calls
+use the selected model and plan limits: normally two calls, up to five planning
+calls plus one canvas call when researching. Clarifications use only planning. Failed
 generation retains the verified source view; no retries or fallback models are
 billed automatically. Sources and cache coverage remain available from **Sources**.
 
@@ -136,11 +156,19 @@ canvas. The app enforces bounded JSON input and output, but a valid program may
 still contain factual, calculation or usability errors. Check its linked
 coursework and identify what to fix in a follow-up.
 
-Each explicit submission with a model selected authorizes sharing those previews,
-excerpts, the previous program and local progress with OpenAI. Local mode sends
+Each explicit submission with a model selected authorizes live read-only discovery
+and sharing its results, those previews, excerpts, the previous program and local
+progress with OpenAI. Local mode sends
 none of them. Brightspace remains read-only. The model cannot invent missing
 course records or submit work. Catalogue coverage remains bounded and is shown
 in the source view when incomplete.
+
+School identity and current enrollment are checked for each operation; hidden or
+removed parents cannot authorize child reads. Login expiry and rate limiting stop
+further research, with the result shown in Sources; cached evidence may still be
+used with its freshness labels. This is an API/document read graph, not arbitrary
+browser clicking. It cannot start quizzes, submit assignments, enumerate class
+rosters, or sign into private LTI providers. Unsupported links remain gaps.
 
 This uses OpenAI's documented [local-app Sign in with ChatGPT flow](https://developers.openai.com/siwc/token-sharing-open-source), with PKCE, state/nonce and signed identity validation. A stable host ID and separate account registrations are saved under `%LOCALAPPDATA%\dd2l\llm\accounts.dpapi`, encrypted with Windows DPAPI. Refreshes are serialized across processes using a separate lock; the school sync can run alongside AI. Tokens stay on the server and never enter browser storage. `jose` handles JWT signature and claim verification. Remote Responses requests set `store: false` and `stream: true`; partial/failed streams do not become successful answers.
 
