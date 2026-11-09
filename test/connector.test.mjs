@@ -283,6 +283,36 @@ test('sync awaits report persistence, backs off, and stops when login is require
   assert.equal(calls, 2);
 });
 
+test('sync cancels an active course or all-course request without committing interrupted work', { timeout: 5000 }, async t => {
+  for (const all of [false, true]) {
+    const directory = await temporary(t);
+    const store = new Store(directory);
+    try {
+      const controller = new AbortController();
+      const fake = fakeBrightspace();
+      let cancelled = false;
+      const client = new BrightspaceClient({ token: async () => 'old-token', load: async () => credentials() }, {
+        fetchImpl: (url, options) => {
+          if (!new URL(url).pathname.endsWith('/content/toc')) return fake.fetchImpl(url, options);
+          return new Promise((resolve, reject) => {
+            options.signal.addEventListener('abort', () => { cancelled = true; reject(options.signal.reason); }, { once: true });
+            controller.abort();
+          });
+        },
+      });
+      await sync(new Connector(client, store), { all, ...(!all ? { course: '42' } : {}) }, {
+        signal: controller.signal,
+        onUpdate: () => assert.fail('interrupted work must not be reported as saved'),
+        wait: () => assert.fail('shutdown must not schedule another pass'),
+      });
+      assert.equal(cancelled, true);
+      assert.equal(store.getMeta('last_run'), null);
+      assert.equal(store.getMeta('all_course_cursor'), null);
+      assert.equal(client.signal, undefined);
+    } finally { store.close(); }
+  }
+});
+
 test('worker lock prevents overlapping commands and recovers a dead process lock', async t => {
   const directory = await temporary(t);
   const release = await lock(directory);

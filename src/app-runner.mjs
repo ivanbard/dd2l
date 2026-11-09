@@ -11,9 +11,10 @@ function openBrowser(url) {
   });
 }
 
-export async function runApp(connector, { onUpdate, server = createUiServer(),
+export async function runApp(connector, { onUpdate, server,
   open = openBrowser, signals = process, port = 4173, log = terminalLog.info } = {}) {
   const controller = new AbortController();
+  server ??= createUiServer({ connector, shutdownSignal: controller.signal });
   const progress = process.stdout.isTTY ? spinner({ signal: controller.signal }) : null;
   let firstPass = true;
   const stop = () => controller.abort();
@@ -52,6 +53,6 @@ export async function runApp(connector, { onUpdate, server = createUiServer(),
     progress?.clear();
     signals.off('SIGINT', stop);
     signals.off('SIGTERM', stop);
-    await new Promise(resolve => server.close(resolve));
+    await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
   }
 }

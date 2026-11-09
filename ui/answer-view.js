@@ -2,7 +2,7 @@ const text = (maxLength = 1000) => ({ type: 'string', maxLength });
 const list = (items, maxItems, minItems = 0) => ({ type: 'array', items, minItems, maxItems });
 const object = properties => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
 const kind = value => ({ type: 'string', enum: [value] });
-const citations = list({ type: 'integer', minimum: 1, maximum: 8 }, 8, 1);
+const citations = list({ type: 'integer', minimum: 1, maximum: 24 }, 24, 1);
 
 export const answerSchema = object({
   title: text(160),
@@ -16,7 +16,7 @@ export const answerSchema = object({
 });
 
 // Validate the same bounded schema we send to the provider, including unexpected keys.
-function matches(value, schema) {
+export function matches(value, schema) {
   if (schema.anyOf) return schema.anyOf.some(choice => matches(value, choice));
   if (schema.type === 'object') return value !== null && typeof value === 'object' && !Array.isArray(value) &&
     Object.keys(value).length === schema.required.length && schema.required.every(key => Object.hasOwn(value, key) && matches(value[key], schema.properties[key]));

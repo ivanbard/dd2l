@@ -70,6 +70,39 @@ try {
   assert.match(await page.locator('#widget-deadlines').textContent(), /Assignment 3/);
   assert.match(await page.locator('#widget-announcements').textContent(), /Midterm review/);
   await page.screenshot({ path: '.dd2l/ui-home.png' });
+  // The core assignment workspace works locally, including ambiguity and follow-ups.
+  await page.locator('#prompt').fill('I am going to work on assignment 2');
+  await page.locator('#prompt').press('Enter');
+  await page.getByRole('heading', { name: 'Which assignment?', exact: true }).waitFor();
+  assert.equal(await page.locator('#assignment-workspace .course-item').count(), 2);
+  await page.locator('#assignment-workspace .course-item').filter({ hasText: 'ELEC 425' }).click();
+  await page.getByRole('heading', { name: 'Assignment 2 · Filter design', exact: true }).waitFor();
+  assert.equal(await page.locator('#course').inputValue(), '103');
+  assert.equal(await page.locator('#results').isVisible(), false);
+  assert.match(await page.locator('.assignment-overview').textContent(), /No submissions in the cached response/);
+  assert.match(await page.locator('[data-category="rubric"]').textContent(), /Validation/);
+  assert.match(await page.locator('[data-category="attachment"]').textContent(), /1 kHz/);
+  assert.match(await page.locator('[data-category="feedback"]').textContent(), /Not retrieved/);
+  assert.doesNotMatch(await page.locator('#assignment-workspace').textContent(), /Memory journal/);
+  await page.screenshot({ path: '.dd2l/ui-assignment-desktop.png', fullPage: true });
+  await page.locator('#prompt').fill('Am I ready to submit?');
+  await page.locator('#prompt').press('Enter');
+  await page.getByText('SUBMISSION CHECK', { exact: true }).waitFor();
+  assert.equal(await page.locator('.assignment-card').first().getAttribute('data-category'), 'rubric');
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.screenshot({ path: '.dd2l/ui-assignment-mobile.png', fullPage: true });
+  await page.locator('#prompt').fill('Explain criterion three');
+  await page.locator('#prompt').press('Enter');
+  await page.getByText('YOUR ASSIGNMENT', { exact: true }).waitFor();
+  assert.equal(await page.locator('.assignment-card').first().getAttribute('data-category'), 'rubric');
+  await page.locator('#prompt').fill('assignment 99');
+  await page.locator('#prompt').press('Enter');
+  await page.getByRole('heading', { name: 'Assignment not found', exact: true }).waitFor();
+  await page.locator('#new-chat').click();
+  assert.equal(await page.locator('#assignment-workspace').isVisible(), false);
+  await page.locator('#course').selectOption('');
+  await page.setViewportSize({ width: 1280, height: 832 });
   await page.locator('#customize-widgets').click();
   assert.equal(await page.locator('.widget-tools select').count(), 0);
   assert.equal(await page.getByRole('button', { name: /^Move Upcoming deadlines/ }).count(), 0);
@@ -136,8 +169,8 @@ try {
   await page.locator('#widget-deadlines.row-3').waitFor();
   await page.locator('#widget-deadlines.size-2x2').waitFor();
   await page.locator('#widget-shortcuts .shortcut-link').filter({ hasText: 'Assignment 3' }).click();
-  await page.locator('.source').first().waitFor();
-  assert.match(await page.locator('#result-list').textContent(), /Assignment 3/);
+  await page.getByRole('heading', { name: 'Assignment 3 · Recursion', exact: true }).waitFor();
+  assert.match(await page.locator('#assignment-workspace').textContent(), /Implement and test recursive functions/);
   await page.locator('#new-chat').click();
   await page.screenshot({ path: '.dd2l/ui-customized.png' });
   const searching = gate(); waits.set('/api/search', searching);
@@ -226,7 +259,10 @@ try {
   });
   await page.reload();
   await page.locator('#model option[value="model"]').waitFor({ state: 'attached' });
-  assert.equal(await page.locator('#model').inputValue(), '');
+  assert.equal(await page.locator('#model').inputValue(), 'model');
+  assert.equal(await page.locator('#model-sharing').isVisible(), true);
+  assert.equal(aiCalls, 0);
+  await page.locator('#model').selectOption('');
   assert.equal(await page.locator('#model-sharing').isVisible(), false);
   assert.equal(await page.locator('#ai-controls, #ask-ai, #ai-consent').count(), 0);
   await page.locator('#prompt').fill('recursion');
@@ -302,6 +338,64 @@ try {
   assert.equal(await page.locator('#model-sharing').isVisible(), false);
   await page.locator('#new-chat').click();
   await page.screenshot({ path: '.dd2l/ui-local-search-mobile.png' });
+  let workspaceCalls = 0;
+  const taskSource = { id: 'memory-source', title: 'Memory and retrieval', category: 'content', courseName: 'PSYC 100',
+    text: 'Encoding, working memory, and retrieval practice.', excerpt: 'Encoding, working memory, and retrieval practice.',
+    stale: true, status: 'stale', lastSuccess: '2026-11-02T14:00:00Z', url: 'https://onq.queensu.ca/d2l/home/102' };
+  const goal = 'Prepare for the memory seminar';
+  const adaptiveWorkspace = { kind: 'task', title: 'Your seminar workspace', goal, question: '',
+    context: { goal, sourceIds: ['memory-source'] }, catalogueCount: 20, total: 20,
+    research: [{ action: 'browse', section: 'content', outcome: 'available' },
+      { action: 'read', section: 'resource', outcome: 'needs_login', message: 'School sign-in is required; using cached sources.' }],
+    sections: [{ title: 'Understand the ideas', purpose: 'Build confidence before the seminar.', sources: [taskSource] }] };
+  await page.route('**/api/llm/answer', async route => {
+    workspaceCalls++;
+    const body = route.request().postDataJSON();
+    assert.equal(body.course, '');
+    assert.equal(body.assignment, undefined);
+    if (workspaceCalls === 1) {
+      assert.equal(body.context, null);
+      await route.fulfill({ json: { workspace: { ...adaptiveWorkspace, question: 'Which class would you like to focus on?', sections: [],
+        context: { goal: 'Get ready for class', sourceIds: [] } }, sources: [] } });
+    } else if (workspaceCalls === 2) {
+      assert.equal(body.context.goal, 'Get ready for class');
+      await route.fulfill({ json: { workspace: adaptiveWorkspace, answer: 'Practice retrieving the memory concepts before the seminar [1].', sources: [taskSource] } });
+    } else {
+      assert.equal(body.context.goal, adaptiveWorkspace.context.goal);
+      assert.deepEqual(body.context.sourceIds, adaptiveWorkspace.context.sourceIds);
+      assert.match(body.context.summary, /Practice retrieving/);
+      await route.fulfill({ status: 503, json: { error: 'Provider unavailable. Your workspace is still available locally.' } });
+    }
+  });
+  await page.locator('#course').selectOption('');
+  await page.locator('#model').selectOption('model');
+  await page.locator('#prompt').fill('Help me feel ready for class');
+  await page.locator('#prompt').press('Enter');
+  await page.getByText('Which class would you like to focus on?', { exact: true }).waitFor();
+  assert.equal(workspaceCalls, 1);
+  assert.equal(await page.locator('#ai-answer').isVisible(), false);
+  await page.locator('#prompt').fill('The psychology seminar on remembering things');
+  await page.locator('#prompt').press('Enter');
+  await page.getByText('Practice retrieving the memory concepts before the seminar [1].', { exact: true }).waitFor();
+  assert.equal(workspaceCalls, 2);
+  assert.match(await page.locator('#assignment-workspace').textContent(), /Understand the ideas/);
+  assert.match(await page.locator('#assignment-workspace').textContent(), /Stale cache/);
+  assert.match(await page.locator('.research-status').textContent(), /2 connector operations/);
+  assert.match(await page.locator('.research-status').textContent(), /resource: needs_login/);
+  assert.match(await page.locator('#notice').textContent(), /School sign-in is required/);
+  assert.equal(await page.locator('#assignment-workspace').isVisible(), true);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.screenshot({ path: '.dd2l/ui-adaptive-mobile.png', fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 832 });
+  await page.screenshot({ path: '.dd2l/ui-adaptive-desktop.png', fullPage: true });
+  await page.locator('#prompt').fill('Now make this into a study plan');
+  await page.locator('#prompt').press('Enter');
+  await page.getByText('Provider unavailable. Your workspace is still available locally.', { exact: true }).waitFor();
+  assert.equal(workspaceCalls, 3);
+  assert.equal(await page.locator('#assignment-workspace').isVisible(), true);
+  assert.equal(await page.locator('#ai-answer').isVisible(), false);
+  await page.locator('#new-chat').click();
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('#settings-nav').click();
   await page.getByRole('button', { name: 'Continue with ChatGPT', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Sign out of active ChatGPT account' }).waitFor();
@@ -338,7 +432,7 @@ try {
   await page.locator('.auth-return').click();
   await page.locator('#workspace').waitFor();
   assert.deepEqual(errors, []);
-  console.log('UI smoke passed: Origin Wave loading states, reduced motion, completion/error/cancel cleanup, widgets, generated answers, citations and responsive layouts.');
+  console.log('UI smoke passed: assignment workspaces, ambiguity, follow-ups, responsive layouts, loading/cancel cleanup, widgets, generated answers and citations.');
 } finally {
   await browser?.close();
   if (callbackServer) await new Promise(resolve => callbackServer.close(resolve));

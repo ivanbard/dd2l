@@ -49,7 +49,7 @@ export async function linkedResponse(client, target) {
       }).map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
     }
     let response;
-    try { response = await client.fetch(url, { headers, redirect: 'manual', signal: AbortSignal.timeout(30_000) }); }
+    try { response = await client.fetch(url, { headers, redirect: 'manual', signal: client.signal ? AbortSignal.any([client.signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000) }); }
     catch { throw new AccessError('retry_wait', 'Linked document request failed or timed out.'); }
     if (response.status >= 300 && response.status < 400) {
       const next = response.headers.get('location');

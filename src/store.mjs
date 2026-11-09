@@ -39,7 +39,8 @@ export async function lock(directory) {
 
 export class Store {
   constructor(directory) {
-    this.db = new DatabaseSync(join(directory, 'inventory.sqlite'));
+    this.path = join(directory, 'inventory.sqlite');
+    this.db = new DatabaseSync(this.path);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS resources (

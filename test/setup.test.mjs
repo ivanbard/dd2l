@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter, once } from 'node:events';
 import { createServer } from 'node:http';
+import { connect } from 'node:net';
 import { execFileSync, spawnSync, spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { mkdtemp, rm, access } from 'node:fs/promises';
@@ -64,6 +65,30 @@ test('combined app opens a loopback UI, syncs all courses and shuts down cleanly
   assert.equal(server.listening, false);
   assert.equal(signals.listenerCount('SIGINT'), 0);
   assert.equal(signals.listenerCount('SIGTERM'), 0);
+});
+
+test('app shutdown closes an unfinished browser request on SIGINT and SIGTERM', { timeout: 5000 }, async () => {
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    const server = createServer((req, res) => res.write('still loading'));
+    const signals = new EventEmitter();
+    let socket;
+    let closed;
+    try {
+      await runApp({ store: { meta() {} }, audit: async () => ({ retryAfter: 0 }) }, {
+        server, signals, port: 0, log() {},
+        open: async url => {
+          socket = connect(Number(new URL(url).port), '127.0.0.1');
+          closed = once(socket, 'close');
+          socket.write('GET / HTTP/1.1\r\nHost: localhost\r\n\r\n');
+          await once(socket, 'data');
+        },
+        onUpdate: () => signals.emit(signal),
+      });
+      await closed;
+      assert.equal(server.listening, false);
+      assert.equal(signals.listenerCount(signal), 0);
+    } finally { socket?.destroy(); server.closeAllConnections(); server.close(); }
+  }
 });
 
 test('browser opening failure preserves the app; expired sessions close it', async () => {

@@ -129,6 +129,84 @@ test('logout removes tokens and reports failed remote revocation, retaining regi
   await assert.rejects(llm.models(), /Settings first/);
 });
 
+test('adaptive planning uses the connected model and structured catalogue IDs before grounded composition', async t => {
+  let requests = 0;
+  const { llm } = await fixture(t, async (url, options) => {
+    if (url.endsWith('/oauth/token')) return Response.json(tokens);
+    requests++;
+    const body = JSON.parse(options.body);
+    assert.equal(body.model, 'chosen-model');
+    assert.equal(body.store, false);
+    assert.equal(body.tools, undefined);
+    assert.match(body.instructions, /untrusted/);
+    assert.equal(body.text.format.strict, true);
+    const input = JSON.parse(body.input[0].content);
+    if (requests === 1) {
+      assert.equal(input.request, 'I am overwhelmed; help me get back on track');
+      assert.equal(input.catalogue[0].id, 'source-a');
+      assert.equal(input.previousWorkspace.goal, 'Prepare for seminars');
+      assert.match(body.instructions, /arbitrary academic tasks/);
+      assert.deepEqual(body.text.format.schema.properties.sections.items.properties.sourceIds.items.enum, ['source-a']);
+      return stream(event({ type: 'response.output_text.delta', delta: JSON.stringify({ title: 'Get back on track',
+        goal: 'Prioritize the next steps', question: '', sections: [{ title: 'Start here', purpose: 'Review requirements', sourceIds: ['source-a'] }] }) }) + event({ type: 'response.completed' }));
+    }
+    assert.equal(input.sources[0].excerpt, 'Read chapter 8 before the seminar.');
+    return stream(event({ type: 'response.output_text.delta', delta: JSON.stringify({ title: 'Next steps', answer: 'Read chapter 8 [1].',
+      sections: [{ type: 'checklist', title: 'Suggested preparation', items: [{ text: 'Read chapter 8.', citations: [1] }] }] }) }) + event({ type: 'response.completed' }));
+  });
+  await connect(llm);
+  const value = await llm.planWorkspace('I am overwhelmed; help me get back on track', 'chosen-model',
+    { catalogue: [{ id: 'source-a', title: 'Memory seminar', preview: 'Read chapter 8 before the seminar.' }], total: 1 },
+    { goal: 'Prepare for seminars', sourceIds: [] });
+  assert.equal(value.sections[0].sourceIds[0], 'source-a');
+  const answer = await llm.answer(value.goal, 'chosen-model', [{ title: 'Memory seminar', excerpt: 'Read chapter 8 before the seminar.' }]);
+  assert.equal(answer.view.sections[0].type, 'checklist');
+  assert.equal(requests, 2);
+});
+
+test('planning exposes bounded connector requests only while live research is available', async t => {
+  let available = true;
+  const request = { action: 'browse', course: '42', section: 'content', query: 'recursion' };
+  const { llm } = await fixture(t, async (url, options) => {
+    if (url.endsWith('/oauth/token')) return Response.json(tokens);
+    const body = JSON.parse(options.body), schema = body.text.format.schema;
+    assert.ok(schema.required.includes('requests'));
+    assert.equal(schema.properties.requests.maxItems, available ? 2 : 0);
+    assert.equal(schema.properties.requests.items.anyOf[0].additionalProperties, false);
+    assert.equal(schema.properties.sections.maxItems, 0);
+    assert.equal(JSON.parse(body.input[0].content).browsing.remaining, available ? 8 : 0);
+    assert.match(body.instructions, /Resource handles are not final source IDs/);
+    const result = { title: 'Recursion', goal: 'Find instructions', question: available ? '' : 'Which topic?', sections: [], requests: available ? [request] : [] };
+    return stream(event({ type: 'response.output_text.delta', delta: JSON.stringify(result) }) + event({ type: 'response.completed' }));
+  });
+  await connect(llm);
+  const plan = () => llm.planWorkspace('Find recursion notes', 'chosen-model', { catalogue: [], browsing: { available, remaining: available ? 8 : 0, history: [] } }, null);
+  assert.deepEqual((await plan()).requests, [request]);
+  available = false;
+  assert.deepEqual((await plan()).requests, []);
+});
+
+test('canvas generation uses the existing model connection, bounded program schema and prior progress', async t => {
+  const program = { title: 'Seminar practice', answer: 'Practice from the course evidence.', html: '<h1>Practice</h1><textarea name="notes"></textarea>', css: 'h1{font-size:2rem}', js: 'return {state};' };
+  const { llm } = await fixture(t, async (url, options) => {
+    if (url.endsWith('/oauth/token')) return Response.json(tokens);
+    const body = JSON.parse(options.body);
+    const input = JSON.parse(body.input[0].content);
+    assert.equal(body.model, 'chosen-model');
+    assert.equal(body.store, false);
+    assert.equal(body.tools, undefined);
+    assert.ok(body.text.format.schema.properties.js);
+    assert.match(body.instructions, /isolated worker/);
+    assert.equal(input.sources[0].id, 'verified-source');
+    assert.equal(input.sources[0].url, undefined);
+    assert.equal(input.previousCanvas.state.inputs.notes.value, 'My progress');
+    return stream(event({ type: 'response.output_text.delta', delta: JSON.stringify(program) }) + event({ type: 'response.completed' }));
+  });
+  await connect(llm);
+  assert.deepEqual(await llm.generateCanvas('Add practice questions', 'chosen-model', [{ id: 'verified-source', title: 'Seminar reading', excerpt: 'Read chapter 8.', url: 'https://school.example' }],
+    { program, state: { inputs: { notes: { value: 'My progress', checked: false } } } }), program);
+});
+
 test('AI HTTP writes require local JSON origin, bounded input and explicit coursework consent', async t => {
   let calls = 0;
   const server = createUiServer({ llm: { login: async () => { calls++; return { url: 'https://auth.openai.com' }; }, callback: async () => { throw new Error('secret'); } } });

@@ -33,7 +33,7 @@
     "start": "node src/cli.mjs",
     "setup": "node src/cli.mjs setup",
     "ui": "node src/ui-server.mjs",
-    "ui:check": "node scripts/check-ui.mjs",
+    "ui:check": "node scripts/check-ui.mjs && node scripts/check-canvas.mjs",
     "test": "node --test",
     "package:check": "node scripts/check-package.mjs",
     "release:check": "npm test && npm run ui:check && npm run package:check",

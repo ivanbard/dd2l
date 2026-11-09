@@ -63,7 +63,7 @@ npm run ui
 
 Open the printed [local URL](http://127.0.0.1:4173). The home screen implements the [Figma Home design](https://www.figma.com/design/ASr0dnwupPLbXmeT1AiPGg/dd2l?node-id=1-3): prompt, course selector, sidebar and profile. Search finds keyword matches in cached course materials and displays source excerpts with retrieval dates and stale-cache labels. Courses opens a material browser; Settings and Profile show connection status and refresh instructions. The source link opens the course in onQ using your normal browser sign-in.
 
-Local search reads the existing inventory without changing it or loading school credentials. Run `npm run audit -- --all` or keep `npm run sync -- --all` running separately to collect data. Each search reads the current cache. Only courses confirmed accessible in cached enrollments are shown; unavailable material stays unavailable, and coverage is limited to what the connector has collected. The mode dropdown beside the course selector defaults to **Local search**, which matches keywords; choosing a connected ChatGPT model generates grounded answers when you submit.
+Local search reads the existing inventory without changing it or loading school credentials. Run `npm run audit -- --all` or keep `npm run sync -- --all` running separately to collect data. Each search reads the current cache. Only courses confirmed accessible in cached enrollments are shown; unavailable material stays unavailable, and coverage is limited to what the connector has collected. The mode dropdown uses an available ChatGPT model when connected, or **Local search** otherwise. Local search matches keywords; submitting with a connected model builds a workspace around your goal.
 
 The homescreen includes upcoming deadlines, recent class announcements, and shortcuts to classes or cached materials. **Customize** enables a four-column, eight-row grid: drag a widget to move it live, or drag any edge or corner to resize it. A cell preview marks the proposed placement; overlapping or out-of-bounds drops return to the original position. Escape cancels the gesture. Focus a widget and use arrow keys to move or Shift + arrows to resize without a pointer. Remove widgets or add them back with **Add widget**. Narrow screens stack widgets normally and show a horizontally scrollable grid while customizing. **Pin shortcut** opens a searchable class/material picker; selecting a shortcut browses its cached sources. New search returns to the homescreen.
 
@@ -73,13 +73,102 @@ Layouts and up to 20 shortcut references save in browser local storage, separate
 
 ### Use your ChatGPT plan
 
-In the live UI, open Settings or Profile and choose **Continue with ChatGPT**. Complete registration and plan-use consent on OpenAI's website, then return to dd2l. No API key is needed. The small mode dropdown below the prompt starts on **Local search**, even with a connected account. Choose a model to see the coursework-sharing notice, then press Enter or the send button to ask it. Changing the selection never submits a prompt. Select **Local search** to return to local retrieval; reloading or starting a new search also restores that default. Plan and usage information stays in Settings.
+In the live UI, open Settings or Profile and choose **Continue with ChatGPT**.
+Complete registration and plan-use consent on OpenAI's website, then return to
+dd2l. No API key is needed. An available connected model is selected by default;
+the sharing notice identifies AI mode. Sending a prompt starts a request;
+loading the app, typing and changing models never send coursework. Choose
+**Local search** for local keyword retrieval and assignment views. New search
+clears workspace context and restores the connected model default.
 
-Each AI request sends the question and up to eight matching excerpts (at most 700 characters each), including titles, course names, retrieval dates and stale-cache labels, to OpenAI. The answer displays those sources with numbered references. The model is instructed to use only this evidence and report gaps; verify generated claims against the excerpts. Keyword retrieval can miss relevant material. No tool execution, Brightspace credentials, complete inventory upload, or persistent conversation history is provided. Each submission with an AI model selected grants permission for that answer; local mode never sends the question to an AI provider. Editing the question or changing modes or courses cancels an in-flight answer.
+Adaptive mode has no assignment-specific prompt gate or fixed intent list.
+The first model call receives the request, prior workspace goal and selected
+source references, accessible course names, and up to 400 catalogue previews
+(maximum 400 characters of source text each). Catalogue selection includes
+keyword matches, previous references, and diverse course/category records.
+When evidence is missing, stale, or needs a current check, the model can request
+read-only connector operations and plan again. It can discover courses and course
+areas, read discovered content files, assignment details/rubrics/own status and
+attachments, quiz metadata/own attempts, discussion forums/topics/posts, overview
+attachments, grades, announcements and calendar events. Supported document links
+can be followed from those resources. Discovery returns request-local handles;
+the model cannot supply arbitrary network URLs. New observations update the same
+inventory, without changing the sync course or traversal cursors. Freshly retrieved
+records receive priority in the next catalogue.
 
-AI answers can compose interactive checklists, comparison tables, and grouped source cards in the same matte printed style as the homescreen widgets. The selected model chooses useful sections or plain text for a simple question. The Responses request uses [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs) with a bounded JSON schema; the app validates the result and citation numbers before rendering trusted components. No model-generated HTML, scripts, URLs or styling execute. Invalid layouts fall back to a bounded text summary and the available sources, with a notice; incomplete streams still fail rather than appearing successful. Provider refusals display as text. A model must support the structured-output format; errors do not trigger another model or a second billed request.
+Research allows at most two operations per planning turn, four read rounds and
+eight connector operations. A final planning turn must finish with available
+evidence or explain what is missing. Requests have a five-minute overall deadline;
+each operation may involve several bounded API/document reads. Calendar discovery
+covers the previous 30 and next 120 days. Live reads share the connector queue with
+sync, so an in-progress course pass can delay them. Use the UI opened by `dd2l start`
+to share its connector; standalone `npm run ui` acquires the inventory lock for each
+operation and reports if another command owns it.
 
-Checklist checks and progress belong to the current answer and reset on a new question. They do not update Brightspace or save to your homescreen. Every generated item or comparison row links to supplied source excerpts; stale cache labels remain visible. Valid structure and citations do not prove factual correctness or complete course coverage. Source retrieval still uses the existing keyword search and its limits.
+The model chooses source IDs and purpose-specific groups in relevance order,
+or asks for clarification. The server validates the plan, enforces the selected
+course scope, and rechecks current access before assembling sources.
+
+After planning, another model call generates a workspace program: title, short answer, HTML
+fragment (up to 60,000 characters), CSS (20,000), and a JavaScript function body
+(60,000), grounded in up to 24 selected excerpts of 8,000 characters each. The
+interface can be a planner, practice session, rubric explorer, form, diagram or
+calculator. It is not limited to a catalogue of prebuilt task widgets. All calls
+use the selected model and plan limits: normally two calls, up to five planning
+calls plus one canvas call when researching. Clarifications use only planning. Failed
+generation retains the verified source view; no retries or fallback models are
+billed automatically. Sources and cache coverage remain available from **Sources**.
+
+The implementation uses browser primitives rather than introducing React and a
+second agent runtime. The dedicated frame has an opaque origin and restrictive
+CSP. Only the trusted frame runtime touches the DOM. Generated JavaScript runs
+in a Blob worker with network access blocked, no DOM or frame navigation, opaque-origin storage restrictions,
+and a two-second response watchdog. Generated HTML is sanitized to semantic HTML,
+form controls and SVG geometry; scripts, embedded frames, event handlers and
+navigation/resource URLs are removed. CSS remains confined to the frame. This
+follows the isolated generative canvas pattern while keeping the current server
+and ChatGPT authentication path.
+
+The generated function receives `state`, `event`, and selected `sources`, and
+returns `{html, state}`. Events include click actions (`data-action`), named input
+changes and submissions. Named controls are saved/restored automatically in
+`state.inputs`; text controls accept up to 4,000 characters each. State must be
+JSON data under 32,000 characters and twelve levels deep. The app waits for
+pending worker updates before collecting progress for a follow-up. Generated
+programs can also keep tabs, revealed explanations, scenario values and other
+local state. Rendering applies the newest queued input so older results do not
+overwrite typing.
+
+A `data-source` button requests inspection of a selected source. The host
+validates that source ID, re-reads current access, then displays a trusted source
+panel and a Brightspace link. The generated program receives no credential,
+arbitrary fetch, file, submission, or host navigation capability. Source URLs
+come from dd2l, not generated HTML. API source references stop resolving after
+access is revoked.
+
+Follow-ups send the previous goal, selected IDs, bounded guidance summary, prior
+program, current progress and any runtime error to the selected model. Prior
+context and coursework are untrusted data in model instructions. **New search**
+and course changes clear the canvas and context; **Restart progress** reruns the
+current program with empty state. Progress is held in browser memory and clears
+on reload. Editing a prompt cancels generation without discarding the current
+canvas. The app enforces bounded JSON input and output, but a valid program may
+still contain factual, calculation or usability errors. Check its linked
+coursework and identify what to fix in a follow-up.
+
+Each explicit submission with a model selected authorizes live read-only discovery
+and sharing its results, those previews, excerpts, the previous program and local
+progress with OpenAI. Local mode sends
+none of them. Brightspace remains read-only. The model cannot invent missing
+course records or submit work. Catalogue coverage remains bounded and is shown
+in the source view when incomplete.
+
+School identity and current enrollment are checked for each operation; hidden or
+removed parents cannot authorize child reads. Login expiry and rate limiting stop
+further research, with the result shown in Sources; cached evidence may still be
+used with its freshness labels. This is an API/document read graph, not arbitrary
+browser clicking. It cannot start quizzes, submit assignments, enumerate class
+rosters, or sign into private LTI providers. Unsupported links remain gaps.
 
 This uses OpenAI's documented [local-app Sign in with ChatGPT flow](https://developers.openai.com/siwc/token-sharing-open-source), with PKCE, state/nonce and signed identity validation. A stable host ID and separate account registrations are saved under `%LOCALAPPDATA%\dd2l\llm\accounts.dpapi`, encrypted with Windows DPAPI. Refreshes are serialized across processes using a separate lock; the school sync can run alongside AI. Tokens stay on the server and never enter browser storage. `jose` handles JWT signature and claim verification. Remote Responses requests set `store: false` and `stream: true`; partial/failed streams do not become successful answers.
 
@@ -133,6 +222,6 @@ Syllabus content lives in individual `syllabus_source` resource rows; the `sylla
 
 An audit can complete successfully as a command while reporting `complete: false`: resource-level denials, unavailable routes, or partial collections remain visible. A successful collection read establishes coverage of that endpoint, not of every activity the website or an external tool may contain.
 
-Improved semantic retrieval, additional model providers, private course-content provider integrations and unattended Windows startup remain later milestones.
+Persistent semantic indexing, additional model providers, private course-content provider integrations and unattended Windows startup remain later milestones.
 
 Do not commit credentials, session cookies, access tokens, downloaded coursework, grades, or classmates' personal information. Discovery evidence should contain access outcomes and field names rather than private payloads.
