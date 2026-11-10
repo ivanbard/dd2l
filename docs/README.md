@@ -109,7 +109,35 @@ The model chooses source IDs and purpose-specific groups in relevance order,
 or asks for clarification. The server validates the plan, enforces the selected
 course scope, and rechecks current access before assembling sources.
 
-After planning, another model call generates a workspace program: title, short answer, HTML
+After planning, another model call normally generates a bounded Mantine composition:
+title, short answer, goal, layout (`columns`, `tabs` or `stack`), and sections selected
+from explanations with source references, checklists, rubrics with verified points,
+personal planned work dates, notes and generated practice. `ui/component-contract.js`
+validates the schema, source IDs, state and actions. Trusted React/Mantine code runs
+in an opaque-origin frame with no network access or generated executable code.
+The model selects content and composition; source inspection and navigation remain
+host-controlled. Known topic IDs and assignment IDs produce direct Brightspace links.
+
+Every standard workspace includes **Your draft**, independently of the model's layout.
+Drafts accept up to 16,000 characters; individual notes accept 4,000. Draft, notes,
+progress and plan autosave in IndexedDB under a hash of the school account and school
+origin. Saved work survives reloads and is specific to this browser profile and local
+site origin (including port). It remains on the device after school logout; delete
+it in **Saved work** or clear this site's browser data to remove it. Browser storage
+is not DPAPI-encrypted. Sending a model follow-up shares the current draft, notes and
+progress under the sharing notice. Export drafts as text before clearing browser data.
+
+Reopening saved work revalidates source access before displaying its generated plan.
+Draft export remains available if sources are revoked. IndexedDB transactions check
+revisions to prevent another tab's changes from being overwritten. Failed saves show
+a warning and retain an exportable in-memory recovery copy even after a new search;
+leaving the page warns while writes or recovery copies remain. Removed note fields
+are retained under **Notes from earlier layouts**. Layout changes preserve stable
+controls and drafts; changed checklist items or practice questions reset their own
+progress. **Restart progress** clears standard checklists and practice while retaining
+drafts, notes and dates. Clearing browser data removes saved work, so export backups.
+
+For a specialized tool, the model can instead generate a custom canvas: title, short answer, HTML
 fragment (up to 60,000 characters), CSS (20,000), and a JavaScript function body
 (60,000), grounded in up to 24 selected excerpts of 8,000 characters each. The
 interface can be a planner, practice session, rubric explorer, form, diagram or
@@ -119,8 +147,7 @@ calls plus one canvas call when researching. Clarifications use only planning. F
 generation retains the verified source view; no retries or fallback models are
 billed automatically. Sources and cache coverage remain available from **Sources**.
 
-The implementation uses browser primitives rather than introducing React and a
-second agent runtime. The dedicated frame has an opaque origin and restrictive
+The custom canvas uses browser primitives and a separate worker. The dedicated frame has an opaque origin and restrictive
 CSP. Only the trusted frame runtime touches the DOM. Generated JavaScript runs
 in a Blob worker with network access blocked, no DOM or frame navigation, opaque-origin storage restrictions,
 and a two-second response watchdog. Generated HTML is sanitized to semantic HTML,
@@ -149,9 +176,11 @@ access is revoked.
 Follow-ups send the previous goal, selected IDs, bounded guidance summary, prior
 program, current progress and any runtime error to the selected model. Prior
 context and coursework are untrusted data in model instructions. **New search**
-and course changes clear the canvas and context; **Restart progress** reruns the
-current program with empty state. Progress is held in browser memory and clears
-on reload. Editing a prompt cancels generation without discarding the current
+and course changes close the current view and context, retaining saved standard workspaces.
+**Restart progress** reruns a custom canvas with empty state. Custom tool progress
+is held in browser memory and clears on reload; an earlier standard draft remains
+in **Saved work** when a follow-up switches to a custom tool.
+Editing a prompt cancels generation without discarding the current
 canvas. The app enforces bounded JSON input and output, but a valid program may
 still contain factual, calculation or usability errors. Check its linked
 coursework and identify what to fix in a follow-up.

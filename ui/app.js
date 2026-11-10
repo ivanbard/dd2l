@@ -2,10 +2,14 @@ import { createWidgets } from './widgets.js';
 import { renderAnswerView } from './answer-renderer.js';
 import { startLoading } from './loading.js';
 import { renderAssignmentWorkspace } from './assignment-workspace.js';
-import { createCanvas } from './canvas.js';
+import { createWorkspace } from './workspace.js';
+import { validComponents, componentSourceIds } from './component-contract.js';
+import { createWorkspaceStore, exportWorkspaceDraft } from './workspace-storage.js';
 
 const $ = id => document.getElementById(id);
-const canvas = createCanvas($('canvas-host'), notice);
+const canvas = createWorkspace($('canvas-host'), notice, saveWorkspace, exportWorkspaceDraft);
+let workspaceStore, storedScope, draftRecord, pendingSaves = 0, saveQueue = Promise.resolve();
+const unsavedWork = new Map();
 let canvasSources = [];
 const refreshWidgets = createWidgets(async (course, title) => {
   try { await load(); } catch (error) { notice(error.message); return; }
@@ -22,6 +26,101 @@ let assignmentContext;
 let taskContext;
 let defaultModel = '';
 let finishPromptLoading = () => {};
+
+function saveWorkspace(snapshot) {
+  const record = draftRecord, store = workspaceStore;
+  if (!record || !store) { canvas.setSaveStatus('Autosave unavailable. Export your draft before leaving.'); return; }
+  record.program = snapshot.program; record.state = snapshot.state;
+  if (record.blocked) {
+    unsavedWork.set(record.recoveryId, structuredClone(record));
+    canvas.setSaveStatus('Not saved. Export your draft before leaving.');
+    refreshSavedWork().catch(error => notice(error.message)); return;
+  }
+  const value = { ...record, program: snapshot.program, state: snapshot.state };
+  pendingSaves++;
+  saveQueue = saveQueue.then(async () => {
+    if (record.blocked) return;
+    const saved = await store.save(value, record.revision);
+    record.revision = saved.revision;
+  }).catch(error => {
+    record.blocked = true;
+    record.recoveryId ||= crypto.randomUUID();
+    unsavedWork.set(record.recoveryId, structuredClone(record));
+    notice(error.message);
+  }).finally(() => {
+    pendingSaves--;
+    if (record === draftRecord) canvas.setSaveStatus(record.blocked ? 'Not saved. Export your draft before leaving.' : pendingSaves ? 'Saving locally…' : 'Saved in this browser');
+    if (!pendingSaves) refreshSavedWork().catch(error => notice(error.message));
+  });
+}
+
+async function refreshSavedWork() {
+  const store = workspaceStore;
+  if (!store) { $('saved-work').hidden = true; return; }
+  const records = await store.list().catch(error => { notice(error.message); return []; });
+  const recoveries = [...unsavedWork.entries()].filter(([, record]) => record.scope === storedScope);
+  if (store !== workspaceStore) return;
+  $('saved-work-list').replaceChildren(); $('saved-work').hidden = !records.length && !recoveries.length;
+  for (const [key, record] of recoveries) {
+    const row = element('div', undefined, 'saved-work-row');
+    const download = element('button', 'Export unsaved draft'); download.type = 'button'; download.addEventListener('click', () => exportWorkspaceDraft(record));
+    const discard = element('button', 'Discard unsaved copy'); discard.type = 'button';
+    discard.addEventListener('click', () => {
+      if (!confirm('Discard this unsaved copy? Export it first if you need to keep it.')) return;
+      unsavedWork.delete(key);
+      if (draftRecord?.recoveryId === key) reset();
+      refreshSavedWork().catch(error => notice(error.message));
+    });
+    row.append(element('strong', `Unsaved copy: ${record.program.title}`), download, discard); $('saved-work-list').append(row);
+  }
+  for (const record of records) {
+    const row = element('div', undefined, 'saved-work-row');
+    const open = element('button', record.program.title); open.type = 'button';
+    open.addEventListener('click', async () => {
+      try {
+        await saveQueue; await load();
+        if (store !== workspaceStore) throw new Error('The school account changed. Open work saved for this account.');
+        const fresh = (await store.list()).find(item => item.id === record.id);
+        if (!fresh) throw new Error('This saved workspace was removed in another tab.');
+        clearAnswer();
+        const current = request = new AbortController();
+        const data = await api(`/api/workspace-sources?${new URLSearchParams({ ids: fresh.context.sourceIds.join(','), course: fresh.course })}`, current.signal);
+        if (request !== current) return;
+        if (data.scope !== storedScope || !validComponents(fresh.program, data.sources)) throw new Error('The saved workspace no longer matches the accessible coursework. Export its draft to keep working.');
+        draftRecord = fresh; taskContext = fresh.context; assignmentContext = undefined;
+        $('course').value = fresh.course; canvasSources = data.sources;
+        showAssignment({ kind: 'task', title: fresh.program.title, goal: fresh.context.goal, question: '', context: fresh.context,
+          catalogueCount: data.sources.length, total: data.sources.length, sections: [{ title: 'Sources', purpose: 'Accessible coursework for this saved workspace.',
+            sources: data.sources.map(source => ({ ...source, text: source.excerpt })) }] }, status.demo);
+        canvas.render(fresh.program, data.sources, fresh.state, fresh.program);
+        $('canvas-title').textContent = fresh.program.title; $('canvas-workspace').hidden = false;
+        $('assignment-workspace').hidden = true; $('results').hidden = true;
+        $('canvas-sources').disabled = false; $('canvas-sources').setAttribute('aria-expanded', 'false');
+        $('workspace').classList.add('has-results'); $('canvas-title').focus(); notice();
+      } catch (error) { if (error.name !== 'AbortError') notice(error.message); }
+    });
+    const download = element('button', 'Export draft'); download.type = 'button';
+    download.setAttribute('aria-label', `Export draft: ${record.program.title}`);
+    download.addEventListener('click', () => exportWorkspaceDraft(record));
+    const remove = element('button', 'Delete'); remove.type = 'button'; remove.setAttribute('aria-label', `Delete saved work: ${record.program.title}`);
+    remove.addEventListener('click', async () => {
+      if (!confirm(`Delete saved work “${record.program.title}” and its draft from this browser?`)) return;
+      try {
+        await saveQueue;
+        const fresh = (await store.list()).find(item => item.id === record.id);
+        if (!fresh) return refreshSavedWork();
+        await store.remove(fresh);
+        if (draftRecord?.id === fresh.id) { draftRecord = undefined; reset(); }
+        await refreshSavedWork();
+      } catch (error) { notice(error.message); }
+    });
+    row.append(open, element('small', `Saved ${date(record.updated)}`), download, remove); $('saved-work-list').append(row);
+  }
+}
+
+addEventListener('beforeunload', event => {
+  if (pendingSaves || unsavedWork.size) { event.preventDefault(); event.returnValue = ''; }
+});
 
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -107,8 +206,11 @@ async function askAI() {
   try {
     const previousCanvas = await canvas.snapshot();
     if (aiRequest !== current) return;
+    const componentPrevious = previousCanvas && validComponents(previousCanvas.program);
     const data = await aiAction('answer', { q: $('prompt').value.trim(), course: $('course').value,
-      context: taskContext || null, canvas: previousCanvas, model: $('model').value, consent: true }, current.signal);
+      context: taskContext || null, canvas: componentPrevious ? null : previousCanvas,
+      components: componentPrevious ? previousCanvas : null, scope: storedScope,
+      model: $('model').value, consent: true }, current.signal);
     if (aiRequest !== current) return;
     $('workspace').classList.add('has-results');
     if (data.workspace) {
@@ -126,15 +228,29 @@ async function askAI() {
         return;
       }
     }
-    if (data.canvas) {
+    if (data.canvas || data.components) {
       const latestCanvas = await canvas.snapshot();
       if (aiRequest !== current) return;
-      canvasSources = data.sources;
-      canvas.render(data.canvas, data.sources, latestCanvas?.state || previousCanvas?.state || {});
-      $('canvas-title').textContent = data.canvas.title;
+      const program = data.components || data.canvas;
+      let nextRecord;
+      if (data.components) {
+        if (data.scope && data.scope !== storedScope) { await load(); throw new Error('The school account changed. Reopen your saved workspace.'); }
+        if (aiRequest !== current) return;
+        if (data.scope !== storedScope) throw new Error('The school account changed. Reopen your saved workspace.');
+        nextRecord = draftRecord || { id: crypto.randomUUID(), scope: storedScope, revision: 0 };
+      }
+      const previous = latestCanvas || previousCanvas;
+      canvas.render(program, data.sources, previous?.state || {}, previous?.program);
+      canvasSources = data.sources; draftRecord = nextRecord;
+      if (draftRecord) {
+        draftRecord.context = { goal: taskContext.goal, sourceIds: [...new Set([...taskContext.sourceIds, ...componentSourceIds(program)])] };
+        draftRecord.course = $('course').value;
+      }
+      $('canvas-title').textContent = program.title;
       $('canvas-workspace').hidden = false;
       $('assignment-workspace').hidden = true;
       $('canvas-sources').setAttribute('aria-expanded', 'false');
+      $('canvas-sources').disabled = false;
       $('canvas-title').focus();
       return;
     }
@@ -183,6 +299,12 @@ async function load() {
   const finish = startLoading($('course-loading'), 'Loading courses');
   try {
     [status, { courses }] = await Promise.all([api('/api/status'), api('/api/courses')]);
+    if (storedScope !== status.scope) {
+      if (storedScope !== undefined) { canvas.clear(); draftRecord = undefined; taskContext = undefined; $('canvas-workspace').hidden = true; }
+      storedScope = status.scope;
+      workspaceStore = storedScope ? createWorkspaceStore(storedScope) : undefined;
+    }
+    await refreshSavedWork().catch(error => notice(error.message));
     const selected = $('course').value;
     $('course').replaceChildren(new Option('All courses', ''), ...courses.map(course => new Option(course.name, course.id)));
     if (courses.some(course => course.id === selected)) $('course').value = selected;
@@ -209,6 +331,7 @@ function searchParams(query) {
 
 function showAssignment(workspace, demo = false) {
   if (!workspace || workspace.kind !== 'task') {
+    draftRecord = undefined;
     canvas.clear(); canvasSources = [];
     $('canvas-workspace').hidden = true;
   }
@@ -368,7 +491,17 @@ $('canvas-sources').addEventListener('click', () => {
   if (show) $('assignment-heading')?.focus();
 });
 $('canvas-restart').addEventListener('click', async () => {
-  try { const current = await canvas.snapshot(); if (current) canvas.render(current.program, canvasSources, {}); }
+  try {
+    const current = await canvas.snapshot();
+    if (current && validComponents(current.program)) {
+      const state = structuredClone(current.state);
+      for (const section of current.program.sections) {
+        for (const item of section.items || []) state.values[item.id] = false;
+        for (const question of section.questions || []) { state.values[question.id] = null; state.revealed[question.id] = false; }
+      }
+      canvas.render(current.program, canvasSources, state, current.program);
+    } else if (current) canvas.render(current.program, canvasSources, {});
+  }
   catch (error) { notice(error.message); }
 });
 $('search-nav').addEventListener('click', () => $('prompt').focus());

@@ -7,11 +7,11 @@ export function checkPackage(files) {
   for (const required of ['package.json', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
     'bin/dd2l.mjs', 'src/cli.mjs', 'src/app-runner.mjs', 'src/ui-server.mjs',
     'src/windows-ocr.ps1', 'src/pdf-worker.mjs', 'ui/index.html', 'ui/app.js',
-    'ui/style.css', 'ui/assets/LUCIDE-LICENSE.txt']) {
+    'ui/style.css', 'ui/assets/LUCIDE-LICENSE.txt', 'ui/assets/workspace.js', 'ui/assets/workspace.css', 'ui/assets/workspace-LICENSE.txt']) {
     assert.ok(paths.has(required), `Package is missing ${required}`);
   }
   for (const path of paths) {
-    assert.match(path, /^(?:package\.json|README\.md|LICENSE|THIRD_PARTY_NOTICES\.md|docs\/README\.md|bin\/dd2l\.mjs|src\/[\w-]+\.(?:mjs|ps1)|ui\/[\w-]+\.(?:html|js|css)|ui\/assets\/[\w-]+\.(?:svg|png|txt))$/, `Unexpected package file: ${path}`);
+    assert.match(path, /^(?:package\.json|README\.md|LICENSE|THIRD_PARTY_NOTICES\.md|docs\/README\.md|bin\/dd2l\.mjs|src\/[\w-]+\.(?:mjs|ps1)|ui\/[\w-]+\.(?:html|js|css)|ui\/assets\/[\w-]+\.(?:svg|png|txt)|ui\/assets\/workspace\.(?:js|css))$/, `Unexpected package file: ${path}`);
   }
 }
 

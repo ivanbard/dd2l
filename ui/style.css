@@ -229,6 +229,13 @@ code { background: #1a1a1a; border-radius: 4px; padding: 3px 6px; font-size: 12p
 .assignment-workspace h3 { margin: 8px 0 16px; }
 .task-section { margin-top: 32px; }
 .canvas-workspace { max-width: 1120px; }
+.saved-work { max-width: 1120px; margin: 32px auto 0; }
+.has-results .saved-work { margin-left: 0; }
+.saved-work-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid #ffffff20; }
+.saved-work-row > button { padding: 9px 12px; border: 1px solid #ffffff25; border-radius: 6px; color: #ddd; background: #ffffff08; }
+.saved-work-row > button:first-child { text-align: left; margin-right: auto; }
+.saved-work-row > small { color: #aaa; }
+.canvas-heading h2, .saved-work-row > button:first-child, .saved-work-row > strong { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .canvas-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
 .generated-canvas { display:block; width:100%; height:600px; border:0; border-top:1px solid #ffffff18; margin-top:20px; background:#222; }
 .canvas-source { margin-top:24px; padding:24px 0; border-top:1px solid #ffffff25; }

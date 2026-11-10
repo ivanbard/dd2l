@@ -96,5 +96,5 @@ export function createCanvas(target, report) {
     });
   }
 
-  return { render, clear, snapshot };
+  return { render, clear, snapshot, inspectSource: (id, sources) => inspect(id, sources, generation) };
 }

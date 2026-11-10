@@ -9,6 +9,19 @@ import { projectInventory, readInventory, searchInventory } from '../src/ui-data
 import { demoInventory } from '../src/ui-demo.mjs';
 import { Store } from '../src/store.mjs';
 
+test('coursework navigation uses verified topic and assignment IDs instead of arbitrary cached URLs', () => {
+  const data = projectInventory([
+    { category: 'enrollments', data: [{ OrgUnit: { Id: 1 }, Access: { CanAccess: true } }] },
+    { key: 'tree', category: 'content', course: '1', outcome: 'available', data: { Topics: [{ TopicId: 17, Title: 'Lecture', Url: 'https://evil.example' }] } },
+    { key: '/d2l/api/le/1.93/1/content/topics/18/file', category: 'content_file', course: '1', outcome: 'available', data: { text: 'Reading' } },
+    { key: 'assignments', category: 'assignments', course: '1', outcome: 'available', data: [{ Id: 20, Name: 'Report' }] },
+  ], null, 'https://school.example');
+  assert.equal(data.sources.find(source => source.title === 'Lecture').url, 'https://school.example/d2l/le/content/1/viewContent/17/View');
+  assert.equal(data.sources.find(source => source.text === 'Reading').url, 'https://school.example/d2l/le/content/1/viewContent/18/View');
+  assert.equal(data.sources.find(source => source.title === 'Report').url, 'https://school.example/d2l/lms/dropbox/user/folder_submit_files.d2l?db=20&ou=1');
+  assert.ok(data.sources.every(source => source.url.startsWith('https://school.example/')));
+});
+
 test('retrieval scopes sources, ranks titles, strips HTML and labels stale data', () => {
   const inventory = demoInventory();
   assert.equal(inventory.courses.length, 3);

@@ -78,19 +78,23 @@ export function projectInventory(rows, state, origin = SCHOOL) {
       };
       for (const [key, child] of Object.entries(value)) if (textFields.has(key)) collect(child, key);
       const text = [...new Set(parts.filter(Boolean))].join('\n').slice(0, 1_000_000);
+      const folder = assignment || (row.category === 'assignments' && (path === '$' || /^\$\/id\d+$/.test(path)) ? value.Id : null);
+      const topic = (row.category === 'content' ? value.TopicId : null) || row.key?.match(/\/content\/topics\/(\d+)\/file(?:$|[?#])/)?.[1];
+      const url = /^\d+$/.test(String(folder ?? '')) ? `${origin}/d2l/lms/dropbox/user/folder_submit_files.d2l?db=${folder}&ou=${row.course}` :
+        /^\d+$/.test(String(topic ?? '')) ? `${origin}/d2l/le/content/${row.course}/viewContent/${topic}/View` : `${origin}/d2l/home/${row.course}`;
       if (text) sources.push({ id: `${row.key}#${path}`, resourceKey: row.key, course: String(row.course),
         courseName: allowed.get(String(row.course)).name, title, text, category: row.category,
         lastSuccess: row.last_success, checkedAt: row.checked_at, stale: row.outcome !== 'available',
         dueDate: ['assignments', 'quizzes', 'quiz_details', 'calendar', 'calendar_occurrences'].includes(row.category) && Number.isFinite(Date.parse(value.DueDate)) ? value.DueDate : null,
         publishedAt: row.category === 'announcements' ? value.PublishedDate || value.StartDate || null : null,
-        url: `${origin}/d2l/home/${row.course}` });
+        url });
       for (const [key, child] of Object.entries(value)) {
         if (!textFields.has(key) && child && typeof child === 'object') visit(child, title, depth + 1, `${path}/${key}`);
       }
     };
     visit(row.data);
   }
-  return { courses, sources, assignments, state };
+  return { courses, sources, assignments, state, origin };
 }
 
 export function homeInventory(inventory, now = Date.now()) {

@@ -24,6 +24,12 @@ Follow-ups carry the workspace's goal, generated interface and local progress, s
 you can change the layout while retaining notes and checked items. Use **Sources**
 to inspect verified coursework, or **Restart progress** to reset the current canvas. A connected model is selected by default;
 requests run only when you send a prompt, with the sharing notice visible.
+Standard workspaces use Mantine components selected around your goal. You can begin
+an assignment in **Your draft**, take notes, check requirements and practice from
+the selected material. **Saved work** reopens drafts and progress after a reload.
+Drafts save in this browser for the current school account; export a text copy for
+backup or submission. Sending a follow-up shares the current draft and notes with
+the selected model. Reopening saved work rechecks coursework access.
 Choose **Local search** for keyword search and deterministic assignment views
 without sending data to AI. New search clears the goal; changing course clears
 context and sets a hard scope for the next request.
@@ -36,10 +42,11 @@ quiz history, discussions, grades, announcements and calendar information.
 
 Adaptive requests use planning followed by interface generation from selected
 excerpts. Live research adds planning turns, bounded to four read rounds and eight
-connector operations per request. Generated HTML/CSS
-renders inside an isolated frame; JavaScript runs in a network-blocked worker
-through a small state/event interface. No frontend framework or external
-inference service is required. Local progress lasts for the current visit. Missing, inaccessible,
+connector operations per request. The model normally returns a validated composition
+of Mantine components inside an isolated frame. Specialized generated HTML/CSS
+and JavaScript tools remain available in the network-blocked custom canvas and worker.
+Their progress lasts for the current visit. No external inference service is required.
+Missing, inaccessible,
 and stale records remain explicit. Cached submissions do not confirm current
 submission status, and generated guidance should be checked against its sources.
 
@@ -59,6 +66,11 @@ Stop dd2l and run `dd2l logout` before switching schools; this deletes its saved
 school session and coursework cache.
 
 ## Run
+
+For the isolated daisyUI/Mantine workspace experiment, see the
+[design-system comparison](experiments/design-systems/README.md). From a checkout,
+run `npm run compare:install`, then `npm run compare` to open both renderers locally.
+This experiment does not change the published app.
 
 Requires Windows, Node.js 24 or newer, and Google Chrome. This repository includes
 an npm CLI; the commands below work once the package is published to npm:

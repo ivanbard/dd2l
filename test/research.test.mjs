@@ -205,7 +205,7 @@ test('the HTTP workspace request actually drives live discovery before canvas ge
       if (turns === 2) return decision([read(input.browsing.history[0].result.resources[0].resource)]);
       return { ...decision([]), sections: [{ title: 'Instructions', purpose: 'Read the new worksheet', sourceIds: [input.catalogue.find(source => source.category === 'content_file').id] }] };
     },
-    generateCanvas: async (q, model, sources) => {
+    generateWorkspace: async (q, model, sources) => {
       assert.match(sources[0].excerpt, /Previously uncached/);
       return { title: 'Recursion', answer: 'Use the worksheet.', html: '<h1>Recursion</h1>', css: '', js: 'return {state};' };
     },
