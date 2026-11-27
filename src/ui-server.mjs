@@ -11,9 +11,18 @@ import { composeTaskWorkspace, validTaskContext, taskCatalogue } from './task-wo
 import { validCanvasContext, validCanvas } from '../ui/canvas-contract.js';
 import { canvasDocument } from './canvas.mjs';
 import { createResearch } from './research.mjs';
+import { createHash } from 'node:crypto';
+import { validComponents, validComponentContext } from '../ui/component-contract.js';
+import { componentDocument } from './component-frame.mjs';
 
 const root = fileURLToPath(new URL('../ui/', import.meta.url));
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png' };
+const workspaceScope = inventory => inventory.scope ? createHash('sha256').update(JSON.stringify([inventory.scope, inventory.origin || 'demo'])).digest('hex') : null;
+const sourcesAvailable = (before, after, sources, course) => {
+  if (workspaceScope(before) !== workspaceScope(after)) return false;
+  const ids = new Set(taskCatalogue(after, course).map(source => source.id));
+  return sources.every(source => ids.has(source.id));
+};
 
 function signInPage(connected, first = false) {
   const title = connected ? (first ? "You're using your ChatGPT plan" : 'ChatGPT connected') : 'Sign-in did not complete';
@@ -78,14 +87,17 @@ export function createUiServer({ demo = false, connector, shutdownSignal, invent
         else if (url.pathname === '/api/llm/select') send(200, await llm.select(data.id));
         else if (url.pathname === '/api/llm/logout') send(200, await llm.logout());
         else if (url.pathname === '/api/llm/answer') {
-          const { q, course = '', assignment = '', context = null, canvas = null, model, consent } = data;
+          const { q, course = '', assignment = '', context = null, canvas = null, components = null, model, consent } = data;
           if (typeof q !== 'string' || !q.trim() || q.length > 500 || typeof course !== 'string' || (course && !/^\d+$/.test(course)) || typeof model !== 'string' || !model || model.length > 200 || consent !== true) {
             send(400, { error: 'Provide a question, course, model and permission to share coursework and workspace progress with OpenAI.' }); return;
           }
           if (typeof assignment !== 'string' || (assignment && (!/^\d+$/.test(assignment) || !course))) { send(400, { error: 'Invalid assignment context.' }); return; }
           if (!validTaskContext(context)) { send(400, { error: 'Invalid workspace context.' }); return; }
           if (!validCanvasContext(canvas)) { send(400, { error: 'Invalid canvas state.' }); return; }
+          if (!validComponentContext(components) || (components && canvas)) { send(400, { error: 'Invalid component workspace.' }); return; }
           const inventory = readInventory(inventoryPath);
+          if (components && data.scope !== workspaceScope(inventory)) { send(409, { error: 'The school account changed. Reopen your saved work for this account.' }); return; }
+          if (components && !validComponents(components.program, taskCatalogue(inventory, course))) { send(404, { error: 'Some workspace sources are no longer accessible. Your saved draft remains on this device.' }); return; }
           if (course && !inventory.courses.some(c => c.id === course)) { send(404, { error: 'Course is not available in this inventory.' }); return; }
           const controller = new AbortController();
           const abort = () => controller.abort();
@@ -97,11 +109,20 @@ export function createUiServer({ demo = false, connector, shutdownSignal, invent
               () => readInventory(inventoryPath), research);
             if (task.workspace.question) { send(200, task); return; }
             try {
-              const generated = await llm.generateCanvas(`Goal: ${task.workspace.goal}\nCurrent request: ${q}`, model, task.sources, canvas, signal);
-              if (!validCanvas(generated)) throw new Error('Invalid generated canvas');
-              send(200, { canvas: generated, answer: generated.answer, ...task });
+              const generated = await llm.generateWorkspace(`Goal: ${task.workspace.goal}\nCurrent request: ${q}`, model, task.sources, components || canvas, signal);
+              if (!validComponents(generated, task.sources) && !validCanvas(generated)) throw new Error('Invalid generated workspace');
+              const currentInventory = readInventory(inventoryPath);
+              if (!sourcesAvailable(inventory, currentInventory, task.sources, course)) {
+                send(409, { error: 'Coursework access changed during generation. Refresh before continuing.' }); return;
+              }
+              send(200, { [validComponents(generated, task.sources) ? 'components' : 'canvas']: generated, answer: generated.answer,
+                scope: workspaceScope(currentInventory), ...task });
             } catch (error) {
               if (controller.signal.aborted) throw error;
+              const currentInventory = readInventory(inventoryPath);
+              if (!sourcesAvailable(inventory, currentInventory, task.sources, course)) {
+                send(409, { error: 'Coursework access changed. Refresh before continuing.' }); return;
+              }
               send(200, { ...task, answerWarning: error.public ? error.message : 'AI explanation is unavailable. Your selected sources are available below.' });
             }
           }
@@ -111,7 +132,7 @@ export function createUiServer({ demo = false, connector, shutdownSignal, invent
       }
       if (req.method !== 'GET') { send(405, { error: 'This route is read-only.' }); return; }
       if (url.pathname.startsWith('/api/')) {
-        if (!['/api/status', '/api/courses', '/api/search', '/api/home', '/api/source'].includes(url.pathname)) { send(404, { error: 'Not found.' }); return; }
+        if (!['/api/status', '/api/courses', '/api/search', '/api/home', '/api/source', '/api/workspace-sources'].includes(url.pathname)) { send(404, { error: 'Not found.' }); return; }
         const query = url.searchParams.get('q') || '';
         const course = url.searchParams.get('course') || '';
         const assignment = url.searchParams.get('assignment') || '';
@@ -119,7 +140,16 @@ export function createUiServer({ demo = false, connector, shutdownSignal, invent
         if (query.length > 500 || (course && !/^\d+$/.test(course))) { send(400, { error: 'Use a query of at most 500 characters and a valid course.' }); return; }
         const inventory = demo ? demoInventory() : readInventory(inventoryPath);
         if (course && !inventory.courses.some(item => item.id === course)) { send(404, { error: 'Course is not available in this inventory.' }); return; }
-        if (url.pathname === '/api/source') {
+        if (url.pathname === '/api/workspace-sources') {
+          const ids = (url.searchParams.get('ids') || '').split(',');
+          if (!ids.length || ids.length > 24 || ids.some(id => !/^[\w-]{24}$/.test(id))) { send(400, { error: 'Invalid workspace source references.' }); return; }
+          const catalogue = taskCatalogue(inventory, course);
+          const selected = ids.map(id => catalogue.find(source => source.id === id));
+          if (selected.some(source => !source)) { send(404, { error: 'Some coursework is no longer accessible. You can still export your draft from Saved work.' }); return; }
+          send(200, { scope: workspaceScope(inventory), sources: selected.map(({ id, title, courseName, category, course, text, dueDate, stale, url, lastSuccess }) =>
+            ({ id, title, courseName, category, course, excerpt: text.slice(0, 8000), dueDate, stale, url, lastSuccess })) });
+        }
+        else if (url.pathname === '/api/source') {
           const id = url.searchParams.get('id') || '';
           if (!/^[\w-]{24}$/.test(id)) { send(400, { error: 'Invalid source reference.' }); return; }
           const source = taskCatalogue(inventory, course).find(source => source.id === id);
@@ -127,7 +157,7 @@ export function createUiServer({ demo = false, connector, shutdownSignal, invent
           send(200, { id: source.id, title: source.title, courseName: source.courseName, text: source.text.slice(0, 100_000),
             url: source.url, stale: !!source.stale, lastSuccess: source.lastSuccess || null });
         }
-        else if (url.pathname === '/api/status') send(200, { demo, state: inventory.state,
+        else if (url.pathname === '/api/status') send(200, { demo, scope: workspaceScope(inventory), state: inventory.state,
           courseCount: inventory.courses.length, sourceCount: inventory.sources.length,
           lastSuccess: inventory.sources.map(source => source.lastSuccess).filter(Boolean).sort().at(-1) || null });
         else if (url.pathname === '/api/home') send(200, { ...homeInventory(inventory), demo });
@@ -139,8 +169,12 @@ export function createUiServer({ demo = false, connector, shutdownSignal, invent
         const frame = canvasDocument();
         send(200, frame.html, 'text/html; charset=utf-8', frame.policy); return;
       }
+      if (url.pathname === '/component-frame') {
+        const frame = await componentDocument();
+        send(200, frame.html, 'text/html; charset=utf-8', frame.policy); return;
+      }
       const path = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-      if (!/^(?:index\.html|app\.js|canvas\.js|canvas-contract\.js|widgets\.js|widget-layout\.js|assignment-workspace\.js|answer-view\.js|answer-renderer\.js|loading\.js|style\.css|assets\/[a-z-]+\.(?:svg|png))$/.test(path)) { send(404, { error: 'Not found.' }); return; }
+      if (!/^(?:index\.html|app\.js|canvas\.js|canvas-contract\.js|component-contract\.js|workspace-plan\.js|workspace\.js|workspace-storage\.js|widgets\.js|widget-layout\.js|assignment-workspace\.js|answer-view\.js|answer-renderer\.js|loading\.js|style\.css|assets\/[a-z-]+\.(?:svg|png))$/.test(path)) { send(404, { error: 'Not found.' }); return; }
       send(200, await readFile(join(root, path)), mime[extname(path)]);
     } catch (error) {
       send(error.code === 'ENOENT' ? 404 : 503, { error: error.public ? error.message : error.code === 'ENOENT' ? 'Not found.' : 'Local data or AI service is unavailable. Retry after the current operation finishes.' });

@@ -1,10 +1,15 @@
 # UI icons
 
+The standard adaptive workspace bundles React, React DOM, Mantine, Day.js and their
+runtime dependencies. `npm run build:ui` retains the original license notices in
+`ui/assets/workspace-LICENSE.txt` alongside the compiled local JavaScript and CSS.
+No runtime CDN is used. The build uses esbuild; its source is a development dependency.
+
 The four sidebar action icons are from [Lucide](https://lucide.dev), version 0.468.0 (square-pen, search, book-open, settings), with their stroke color set to match the UI. The upstream ISC license notice is retained in [ui/assets/LUCIDE-LICENSE.txt](ui/assets/LUCIDE-LICENSE.txt). The SVGs are bundled locally; no icon runtime or external requests are required.
 
 # Dot-matrix loading indicator
 
-The app's 5×5 Origin Wave indicator is adapted from `DotmSquare12` (`@dotmatrix/dotm-square-12`), dot-matrix v1.5.0 by [zzzzshawn/matrix](https://github.com/zzzzshawn/matrix), as published at [Dot Matrix](https://dotmatrix.zzzzshawn.cloud/). `ui/loading.js` and the `dot-origin-wave` CSS preserve its origin, Manhattan ring delays, opacity curve and reduced-motion appearance in plain JavaScript/CSS. This adaptation is bundled for use inside dd2l, not offered as a standalone component or library. No React, Tailwind, registry CLI or external runtime is bundled.
+The app's 5×5 Origin Wave indicator is adapted from `DotmSquare12` (`@dotmatrix/dotm-square-12`), dot-matrix v1.5.0 by [zzzzshawn/matrix](https://github.com/zzzzshawn/matrix), as published at [Dot Matrix](https://dotmatrix.zzzzshawn.cloud/). `ui/loading.js` and the `dot-origin-wave` CSS preserve its origin, Manhattan ring delays, opacity curve and reduced-motion appearance in plain JavaScript/CSS. This adaptation is bundled for use inside dd2l, not offered as a standalone component or library. The indicator itself uses no React, Tailwind, registry CLI or external runtime.
 
 The upstream license is retained below:
 

@@ -207,6 +207,28 @@ test('canvas generation uses the existing model connection, bounded program sche
     { program, state: { inputs: { notes: { value: 'My progress', checked: false } } } }), program);
 });
 
+test('Mantine generation uses the existing model connection, source-bound components and prior drafts', async t => {
+  const program = { title: 'Report desk', goal: 'Finish the report', answer: 'Review the requirements.', layout: 'columns',
+    sections: [{ id: 'requirements', type: 'reading', title: 'Requirements', text: 'Read chapter 8.', sourceIds: ['verified-source'] }] };
+  let malicious = false;
+  const { llm } = await fixture(t, async (url, options) => {
+    if (url.endsWith('/oauth/token')) return Response.json(tokens);
+    const body = JSON.parse(options.body), input = JSON.parse(body.input[0].content);
+    assert.equal(body.model, 'chosen-model'); assert.equal(body.store, false);
+    assert.ok(body.text.format.schema.properties.program.anyOf[0].properties.layout);
+    assert.match(body.instructions, /permanent saved draft editor/);
+    assert.equal(input.sources[0].url, undefined);
+    assert.equal(input.previousWorkspace.state.draft, 'My work');
+    const output = { program: malicious ? { ...program, js: 'bad()' } : program };
+    return stream(event({ type: 'response.output_text.delta', delta: JSON.stringify(output) }) + event({ type: 'response.completed' }));
+  });
+  await connect(llm);
+  const generate = () => llm.generateWorkspace('Finish my report', 'chosen-model', [{ id: 'verified-source', excerpt: 'Read chapter 8.', url: 'https://school.example' }], { program, state: { draft: 'My work' } });
+  assert.deepEqual(await generate(), program);
+  malicious = true;
+  await assert.rejects(generate(), /could not be verified/);
+});
+
 test('AI HTTP writes require local JSON origin, bounded input and explicit coursework consent', async t => {
   let calls = 0;
   const server = createUiServer({ llm: { login: async () => { calls++; return { url: 'https://auth.openai.com' }; }, callback: async () => { throw new Error('secret'); } } });

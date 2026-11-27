@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workspace comparison · dd2l</title><link rel="stylesheet" href="/host.css"><script type="module" src="/host.js"></script></head>
+<body><a class="skip" href="#comparison">Skip to workspaces</a>
+<main>
+  <header><div><p class="eyebrow">dd2l / DESIGN SYSTEM STUDY</p><h1>One workspace. Two renderers.</h1>
+    <p class="intro">Compare the same coursework and progress in daisyUI and Mantine.</p></div><span class="sample">Fictional data · local only</span></header>
+  <section class="toolbar" aria-label="Comparison controls">
+    <label>Task<select id="scenario"><option value="planner">Assignment planner</option><option value="study">Study session</option></select></label>
+    <label>View<select id="view"><option value="both">Side by side</option><option value="daisy">daisyUI only</option><option value="mantine">Mantine only</option></select></label>
+    <label>Canvas width<select id="width"><option value="fluid">Fit panel</option><option value="390">Mobile · 390px</option><option value="280">Narrow · 280px</option></select></label>
+    <div class="actions"><button id="adapt" type="button">Move notes first</button><button id="reset" type="button">Reset progress</button></div>
+  </section>
+  <p id="status" role="status">Loading both renderers…</p>
+  <section id="comparison" class="comparison" aria-label="Rendered workspaces">
+    <article id="panel-daisy"><div class="renderer-heading"><h2>daisyUI <span id="version-daisy"></span></h2><p>Native HTML + component CSS</p></div>
+      <p class="metrics" id="metrics-daisy">Measuring…</p><div class="frame-wrap"><iframe id="daisy" title="daisyUI workspace" sandbox="allow-scripts"></iframe></div></article>
+    <article id="panel-mantine"><div class="renderer-heading"><h2>Mantine <span id="version-mantine"></span></h2><p>React + interactive components</p></div>
+      <p class="metrics" id="metrics-mantine">Measuring…</p><div class="frame-wrap"><iframe id="mantine" title="Mantine workspace" sandbox="allow-scripts"></iframe></div></article>
+  </section>
+  <section id="source" class="source" hidden aria-labelledby="source-title"><h2 id="source-title" tabindex="-1"></h2><p id="source-course"></p><pre id="source-text"></pre><button id="close-source" type="button">Close source</button></section>
+  <section class="tools" aria-label="Generation and evaluation">
+    <details><summary>Try a generated or adapted plan</summary>
+      <p>Both renderers consume one validated JSON plan. Copy the prompt into your chosen model, then paste its JSON response below. This page makes no model requests.</p>
+      <label>Workspace goal<textarea id="goal" rows="2" maxlength="1000"></textarea></label>
+      <div class="actions"><button id="copy-prompt" type="button">Copy generation prompt</button><a href="/schema.json" download="workspace-plan.schema.json">Download schema</a></div>
+      <label>Generation prompt<textarea id="prompt" rows="5" readonly></textarea></label>
+      <label>Workspace plan JSON<textarea id="plan" rows="14" spellcheck="false" maxlength="64000" aria-describedby="plan-help"></textarea></label>
+      <p id="plan-help">Apply preserves unchanged controls by ID. Changed questions reset their answers; switching tasks resets progress. HTML, CSS and executable code are never evaluated.</p>
+      <button id="apply" type="button">Apply plan to both</button>
+    </details>
+    <details><summary>Record the comparison</summary>
+      <p>Try checkboxes, notes, dates, keyboard tabs, practice feedback, source inspection and narrow layouts. Bundle sizes include each renderer’s runtime and shared contract; first paint is a local observation, not a benchmark.</p>
+      <label>Observations<textarea id="observations" rows="5" maxlength="8000" placeholder="Which task felt easier? Any focus, layout, state or component limitations?"></textarea></label>
+      <button id="export" type="button">Export comparison JSON</button>
+    </details>
+  </section>
+  <footer>Session progress stays in memory and clears on reload. This lab uses fictional demo coursework and does not connect to onQ or ChatGPT.</footer>
+</main></body></html>

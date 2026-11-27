@@ -115,7 +115,7 @@ test('HTTP workspace and AI share resolved evidence, validate context, and re-re
       question: q === 'assignment 3' ? 'Assignment 3 is not in the cache. Which activity did you mean?' : '',
       sections: q === 'assignment 3' ? [] : [{ title: 'Criteria', purpose: 'Review the grading criteria',
         sourceIds: catalogue.filter(source => source.category === 'rubric').map(source => source.id) }] }),
-    generateCanvas: async (q, model, sources) => {
+    generateWorkspace: async (q, model, sources) => {
     calls++;
     if (failExplanation) throw Object.assign(new Error('Provider unavailable'), { public: true });
     assert.equal(model, 'model');

@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
+import { mock } from 'node:test';
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
 import { createUiServer } from '../src/ui-server.mjs';
+
+mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-02T14:00:00Z') });
 
 const server = createUiServer({ demo: true });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -437,4 +440,5 @@ try {
   await browser?.close();
   if (callbackServer) await new Promise(resolve => callbackServer.close(resolve));
   await new Promise(resolve => server.close(resolve));
+  mock.timers.reset();
 }

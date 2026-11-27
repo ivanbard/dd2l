@@ -16,7 +16,7 @@ test('published releases require an exact stable package version tag', () => {
 const files = ['package.json', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
   'bin/dd2l.mjs', 'src/cli.mjs', 'src/app-runner.mjs', 'src/ui-server.mjs',
   'src/windows-ocr.ps1', 'src/pdf-worker.mjs', 'ui/index.html', 'ui/app.js',
-  'ui/style.css', 'ui/assets/LUCIDE-LICENSE.txt'].map(path => ({ path }));
+  'ui/style.css', 'ui/assets/LUCIDE-LICENSE.txt', 'ui/assets/workspace.js', 'ui/assets/workspace.css', 'ui/assets/workspace-LICENSE.txt'].map(path => ({ path }));
 
 test('release rejects missing runtime files and accidentally packaged private or development files', () => {
   checkPackage(files);

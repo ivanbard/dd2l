@@ -1,0 +1,30 @@
+:root { font-family: system-ui, sans-serif; color-scheme: dark; background: #222; color: #e8e9e6; }
+:root[data-theme="dark"] { --color-primary: #12b886; --color-primary-content: #071f17; }
+* { box-sizing: border-box; }
+body { margin: 0; overflow-wrap: anywhere; }
+#root { padding: 28px; max-width: 920px; margin: auto; }
+h1 { font-size: clamp(24px, 4vw, 32px); line-height: 1.2; font-weight: 650; letter-spacing: -.7px; margin: 0; }
+h2 { font-size: 22px; font-weight: 600; margin: 0 0 24px; }
+.eyebrow { font-size: 10px; letter-spacing: 1.6px; color: #9da6a5; margin: 0 0 16px; }
+.goal { color: #b8c1bf; font-size: 14px; line-height: 1.6; margin: 14px 0; }
+.completion, .help { font-size: 13px; line-height: 1.6; color: #a7b3b0; margin: 12px 0 20px; }
+.requirement-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.requirement-row + .requirement-row { margin-top: 20px; }
+.requirement-row > button { flex-shrink: 0; }
+.check-label { display: flex; align-items: flex-start; gap: 12px; font-size: 14px; line-height: 1.6; }
+.check-label input { flex-shrink: 0; }
+.section-panel { padding-top: 24px; }
+.section-panel > progress { width: 100%; margin-bottom: 24px; }
+.field-label { display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.field-label input, .field-label textarea { width: 100%; }
+.practice-question { border: 0; padding: 0; margin: 0 0 32px; min-width: 0; }
+.practice-question legend { margin-bottom: 16px; font-size: 14px; font-weight: 600; }
+.practice-question .check-label { margin: 12px 0; }
+.practice-question > button { margin: 12px 8px 8px 0; }
+.table-scroll { overflow-x: auto; }
+table { min-width: 440px; }
+caption { text-align: left; color: #a7b3b0; font-size: 13px; margin-bottom: 12px; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid #8fd7cd; outline-offset: 3px; }
+@media (max-width: 420px) { #root { padding: 18px; } .requirement-row { flex-wrap: wrap; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }

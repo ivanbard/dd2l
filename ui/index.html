@@ -43,7 +43,7 @@
         </div>
         <span id="search-help" class="sr-only">Select a ChatGPT model for an adaptive workspace around any coursework goal. Local search uses keywords and assignment matching.</span>
       </form>
-      <p id="model-sharing" class="model-sharing" hidden>Adaptive workspace · The model can request read-only Brightspace discovery. Sending shares your goal, workspace progress, course previews and retrieved excerpts with OpenAI.</p>
+      <p id="model-sharing" class="model-sharing" hidden>Adaptive workspace · The model can request read-only Brightspace discovery. Sending shares your goal, draft, workspace progress, course previews and retrieved excerpts with OpenAI.</p>
       <p id="adaptive-help" class="model-sharing">For adaptive workspaces, connect ChatGPT in Settings and select a model. Local search uses keyword matching.</p>
       <p id="notice" class="notice" role="status" hidden></p>
     </section>
@@ -60,7 +60,7 @@
         <button id="canvas-sources" type="button" aria-expanded="false" aria-controls="assignment-workspace">Sources</button>
         <button id="canvas-restart" type="button">Restart progress</button>
       </div></header>
-      <p class="retrieval-note">AI-generated workspace · Verify requirements against the linked coursework. Progress is kept for this visit.</p>
+      <p class="retrieval-note">AI-generated workspace · Verify requirements against the linked coursework. Standard workspaces autosave in this browser; custom tools keep progress for this visit.</p>
       <div id="canvas-host" hidden></div>
       <aside id="canvas-source" class="canvas-source" aria-label="Verified coursework source" hidden></aside>
     </section>
@@ -74,6 +74,11 @@
       <div class="results-heading"><h2 id="results-title" tabindex="-1">Sources</h2><span id="result-count"></span></div>
       <p class="retrieval-note">Matching excerpts from your local inventory. These are source materials, not an AI-generated answer.</p>
       <div id="result-list"></div>
+    </section>
+    <section id="saved-work" class="saved-work" aria-labelledby="saved-work-heading" hidden>
+      <h2 id="saved-work-heading">Saved work</h2>
+      <p class="retrieval-note">Drafts and progress saved in this browser for the current school account. Export a copy before clearing browser data.</p>
+      <div id="saved-work-list"></div>
     </section>
   </main>
   <dialog id="panel" aria-labelledby="panel-title">

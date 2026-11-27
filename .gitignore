@@ -5,6 +5,10 @@ node_modules/
 *.dpapi
 .dd2l/
 coverage/
+experiments/design-systems/dist/
+ui/assets/workspace.js
+ui/assets/workspace.css
+ui/assets/workspace-LICENSE.txt
 *.tgz
 /docs/*
 !/docs/README.md

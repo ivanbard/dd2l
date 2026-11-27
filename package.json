@@ -30,10 +30,18 @@
     "node": ">=24"
   },
   "scripts": {
+    "build:ui": "node scripts/build-workspace.mjs",
+    "prepare": "npm run build:ui",
+    "pretest": "npm run build:ui",
+    "preui:check": "npm run build:ui",
+    "prepackage:check": "npm run build:ui",
+    "compare:install": "npm --prefix experiments/design-systems ci",
+    "compare": "npm --prefix experiments/design-systems start",
+    "compare:check": "npm --prefix experiments/design-systems run check",
     "start": "node src/cli.mjs",
     "setup": "node src/cli.mjs setup",
     "ui": "node src/ui-server.mjs",
-    "ui:check": "node scripts/check-ui.mjs && node scripts/check-canvas.mjs",
+    "ui:check": "node scripts/check-ui.mjs && node scripts/check-canvas.mjs && node scripts/check-components.mjs",
     "test": "node --test",
     "package:check": "node scripts/check-package.mjs",
     "release:check": "npm test && npm run ui:check && npm run package:check",
@@ -52,5 +60,14 @@
     "jose": "^6.2.15",
     "playwright-core": "1.58.2",
     "unpdf": "2.0.0"
+  },
+  "devDependencies": {
+    "@mantine/core": "9.8.0",
+    "@mantine/dates": "9.8.0",
+    "@mantine/hooks": "9.8.0",
+    "dayjs": "1.11.23",
+    "esbuild": "0.28.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   }
 }
